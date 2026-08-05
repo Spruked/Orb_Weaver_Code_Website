@@ -1,0 +1,47 @@
+```
+Orb_Weaver_Code_Website/
+├── app/
+│   ├── account/
+│   │   ├── downloads/
+│   │   ├── licenses/
+│   │   └── orders/
+│   ├── admin/
+│   ├── api/
+│   │   ├── account/
+│   │   │   ├── downloads/
+│   │   │   ├── licenses/
+│   │   │   └── orders/
+│   │   ├── admin/
+│   │   │   ├── metrics/
+│   │   │   ├── orders/
+│   │   │   └── users/
+│   │   ├── auth/
+│   │   │   ├── login/
+│   │   │   ├── logout/
+│   │   │   ├── me/
+│   │   │   └── signup/
+│   │   ├── checkout/
+│   │   ├── downloads/
+│   │   │   └── [artifactId]/
+│   │   ├── license-requests/
+│   │   ├── orders/
+│   │   │   └── [orderId]/
+│   │   └── payments/
+│   │       └── webhook/
+│   ├── checkout/
+│   │   ├── cancelled/
+│   │   └── success/
+│   ├── code-vin/
+│   ├── documentation/
+│   ├── download/
+│   ├── how-it-works/
+│   ├── integrations/
+│   ├── pricing/
+│   ├── provenance/
+│   └── security/
+├── components/
+├── lib/
+├── prisma/
+└── public/
+    └── images/
+```

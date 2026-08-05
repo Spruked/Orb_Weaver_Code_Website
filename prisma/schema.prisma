@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FULFILLMENT_PENDING
+  FULFILLED
+  REFUNDED
+  DISPUTED
+  CANCELLED
+}
+
+model User {
+  id           String           @id @default(cuid())
+  email        String           @unique
+  name         String?
+  passwordHash String
+  role         UserRole         @default(USER)
+  createdAt    DateTime         @default(now())
+  orders       Order[]
+  entitlements Entitlement[]
+  downloadGrants DownloadGrant[]
+  licenseRequests LicenseRequest[]
+}
+
+model Order {
+  id            String         @id @default(cuid())
+  userId        String
+  status        OrderStatus    @default(PENDING)
+  currency      String         @default("USD")
+  subtotalCents Int
+  totalCents    Int
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  user          User           @relation(fields: [userId], references: [id])
+  items         OrderItem[]
+  paymentEvents PaymentEvent[]
+  entitlements  Entitlement[]
+}
+
+model OrderItem {
+  id          String @id @default(cuid())
+  orderId     String
+  sku         String
+  name        String
+  quantity    Int    @default(1)
+  priceCents  Int
+  order       Order  @relation(fields: [orderId], references: [id])
+}
+
+model PaymentEvent {
+  id            String   @id @default(cuid())
+  orderId        String
+  provider       String
+  providerEventId String @unique
+  eventType      String
+  verified       Boolean  @default(false)
+  payload        String
+  createdAt      DateTime @default(now())
+  order          Order    @relation(fields: [orderId], references: [id])
+}
+
+model Entitlement {
+  id          String   @id @default(cuid())
+  userId      String
+  orderId     String
+  sku         String
+  seats       Int?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+  order       Order    @relation(fields: [orderId], references: [id])
+}
+
+model Release {
+  id           String            @id @default(cuid())
+  version      String            @unique
+  releasedAt   DateTime
+  manifestJson String
+  artifacts    ReleaseArtifact[]
+}
+
+model ReleaseArtifact {
+  id          String   @id @default(cuid())
+  releaseId   String
+  sku         String
+  platform    String
+  filename    String
+  sha256      String
+  sizeBytes   Int
+  storagePath String
+  release     Release  @relation(fields: [releaseId], references: [id])
+}
+
+model DownloadGrant {
+  id            String   @id @default(cuid())
+  userId        String
+  orderId       String
+  artifactId    String
+  tokenHash     String
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id])
+  downloadEvents DownloadEvent[]
+}
+
+model DownloadEvent {
+  id         String   @id @default(cuid())
+  grantId    String
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  grant      DownloadGrant @relation(fields: [grantId], references: [id])
+}
+
+model LicenseRequest {
+  id              String   @id @default(cuid())
+  userId          String
+  orderId         String
+  sku             String
+  machineNote     String?
+  status          String   @default("PENDING")
+  deliveryMessage String?
+  createdAt       DateTime @default(now())
+  fulfilledAt     DateTime?
+  user            User     @relation(fields: [userId], references: [id])
+}
