@@ -7,27 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
-  USER
-  ADMIN
-}
-
-enum OrderStatus {
-  PENDING
-  PAID
-  FULFILLMENT_PENDING
-  FULFILLED
-  REFUNDED
-  DISPUTED
-  CANCELLED
-}
-
 model User {
   id           String           @id @default(cuid())
   email        String           @unique
   name         String?
   passwordHash String
-  role         UserRole         @default(USER)
+  role         String           @default("USER")
   createdAt    DateTime         @default(now())
   orders       Order[]
   entitlements Entitlement[]
@@ -38,7 +23,7 @@ model User {
 model Order {
   id            String         @id @default(cuid())
   userId        String
-  status        OrderStatus    @default(PENDING)
+  status        String         @default("PENDING")
   currency      String         @default("USD")
   subtotalCents Int
   totalCents    Int

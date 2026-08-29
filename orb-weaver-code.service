@@ -1,0 +1,19 @@
+[Unit]
+Description=Orb Weaver Code Website - Next.js Application
+After=network.target
+
+[Service]
+Type=simple
+User=bryan
+WorkingDirectory=/home/bryan/projects/Orb_Weaver_Code_Website
+Environment="NODE_ENV=production"
+Environment="PORT=41000"
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=orb-weaver-code
+
+[Install]
+WantedBy=multi-user.target

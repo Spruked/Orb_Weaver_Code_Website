@@ -49,6 +49,49 @@ npm run db:push
 npm run dev
 ```
 
+## Production Deployment
+
+**Domain:** codeweaver.certsig.com
+
+### Quick Setup
+
+Run the automated setup script:
+
+```bash
+./setup.sh
+```
+
+This will:
+- Build the application
+- Install and enable systemd service for auto-start/restart
+- Configure nginx reverse proxy
+- Setup SSL with Let's Encrypt (if available)
+
+### Manual Deployment
+
+For step-by-step instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md)
+
+### Quick Deployment Script
+
+After initial setup, deploy updates with:
+
+```bash
+./deploy.sh
+```
+
+### Service Management
+
+```bash
+# View service status
+sudo systemctl status orb-weaver-code.service
+
+# View logs
+sudo journalctl -u orb-weaver-code.service -f
+
+# Restart service
+sudo systemctl restart orb-weaver-code.service
+```
+
 ## High-Level API Routes
 
 - Auth: `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`
@@ -61,6 +104,6 @@ npm run dev
 
 Each page has an explicit image placeholder block with a file hint and recommended dimensions so final visual assets can be dropped in later.
 
-© 2026 Bryan [Last Name]. All rights reserved.
+© 2026 Bryan Spruk. All rights reserved.
 Orb Weaver Code‑Cipher is proprietary software. Unauthorized copying,
 redistribution, or modification is prohibited.

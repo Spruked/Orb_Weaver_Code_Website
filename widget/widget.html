@@ -1,0 +1,193 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      overflow: hidden;
+      -webkit-app-region: drag; /* whole widget is draggable by default */
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    #card {
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(12, 14, 18, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #e8edf5;
+      backdrop-filter: blur(6px);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+    }
+
+    .title {
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #94a3b8;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #64748b;
+      -webkit-app-region: no-drag;
+    }
+    .dot.ok { background: #00d4aa; }
+    .dot.warn { background: #f59e0b; }
+    .dot.err { background: #ef4444; }
+
+    .metric-row { display: flex; gap: 10px; }
+    .metric {
+      flex: 1;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 8px;
+      padding: 6px 8px;
+    }
+    .metric .label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+    }
+    .metric .value {
+      font-size: 17px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .metric .value.warn { color: #f59e0b; }
+    .metric .value.danger { color: #ef4444; }
+
+    .bar {
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .bar-fill {
+      height: 100%;
+      background: #4a9eff;
+    }
+
+    #openBtn {
+      -webkit-app-region: no-drag;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #94a3b8;
+      font-size: 10px;
+      border-radius: 6px;
+      padding: 3px 6px;
+      cursor: pointer;
+    }
+    #openBtn:hover { color: #e8edf5; border-color: rgba(255, 255, 255, 0.3); }
+  </style>
+</head>
+<body>
+  <div id="card">
+    <div class="row">
+      <span class="title">Session Monitor</span>
+      <span id="statusDot" class="dot"></span>
+    </div>
+    <div class="metric-row">
+      <div class="metric">
+        <div class="label">Primary</div>
+        <div id="primaryValue" class="value">--</div>
+        <div class="bar"><div id="primaryBar" class="bar-fill" style="width:0%"></div></div>
+      </div>
+      <div class="metric">
+        <div class="label">Secondary</div>
+        <div id="secondaryValue" class="value">--</div>
+        <div class="bar"><div id="secondaryBar" class="bar-fill" style="width:0%"></div></div>
+      </div>
+    </div>
+    <div class="row">
+      <span id="lastUpdated" style="color:#64748b;">not connected</span>
+      <button id="openBtn">Dashboard</button>
+    </div>
+  </div>
+
+  <script>
+    const statusDot = document.getElementById("statusDot");
+    const primaryValue = document.getElementById("primaryValue");
+    const secondaryValue = document.getElementById("secondaryValue");
+    const primaryBar = document.getElementById("primaryBar");
+    const secondaryBar = document.getElementById("secondaryBar");
+    const lastUpdated = document.getElementById("lastUpdated");
+    const openBtn = document.getElementById("openBtn");
+
+    openBtn.addEventListener("click", () => window.widgetBridge.openDashboard());
+
+    function setBarColor(el, valueEl, pct) {
+      let color = "#4a9eff";
+      let cls = "";
+      if (pct >= 90) { color = "#ef4444"; cls = "danger"; }
+      else if (pct >= 75) { color = "#f59e0b"; cls = "warn"; }
+      el.style.background = color;
+      valueEl.className = "value " + cls;
+    }
+
+    async function poll() {
+      const settings = await window.widgetBridge.getSettings();
+      try {
+        const res = await fetch(`${settings.apiBase}/codex/quota`, { cache: "no-store" });
+        const data = await res.json();
+
+        if (data.status === "unknown") {
+          statusDot.className = "dot warn";
+          primaryValue.textContent = "?";
+          secondaryValue.textContent = "?";
+          lastUpdated.textContent = "quota unavailable";
+          return;
+        }
+
+        const p = Number(data.primary_used_percent);
+        const s = Number(data.secondary_used_percent);
+
+        statusDot.className = "dot ok";
+        primaryValue.textContent = Number.isFinite(p) ? `${p}%` : "?";
+        secondaryValue.textContent = Number.isFinite(s) ? `${s}%` : "?";
+
+        if (Number.isFinite(p)) {
+          primaryBar.style.width = `${Math.min(100, p)}%`;
+          setBarColor(primaryBar, primaryValue, p);
+        }
+        if (Number.isFinite(s)) {
+          secondaryBar.style.width = `${Math.min(100, s)}%`;
+          setBarColor(secondaryBar, secondaryValue, s);
+        }
+
+        lastUpdated.textContent = "updated " + new Date().toLocaleTimeString();
+      } catch (err) {
+        statusDot.className = "dot err";
+        lastUpdated.textContent = "server unreachable";
+      }
+    }
+
+    async function startPolling() {
+      const settings = await window.widgetBridge.getSettings();
+      poll();
+      setInterval(poll, settings.pollIntervalMs || 5000);
+    }
+
+    startPolling();
+  </script>
+</body>
+</html>

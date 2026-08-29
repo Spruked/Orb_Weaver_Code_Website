@@ -23,7 +23,7 @@ export async function verifyPassword(password: string, hash: string) {
   return bcrypt.compare(password, hash);
 }
 
-export async function createSessionToken(userId: string, role: "USER" | "ADMIN") {
+export async function createSessionToken(userId: string, role: string) {
   return new SignJWT({ sub: userId, role })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
