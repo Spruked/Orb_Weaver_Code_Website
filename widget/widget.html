@@ -42,7 +42,6 @@
     .title {
       font-weight: 800;
       font-size: 13px;
-      letter-spacing: 0;
       text-transform: uppercase;
       color: #9eb2af;
     }
@@ -111,8 +110,10 @@
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0;
       color: #748783;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .metric .value {
@@ -150,6 +151,8 @@
       white-space: nowrap;
     }
 
+    #lastUpdated.limit { color: #ff8e87; font-weight: 700; }
+
     #openBtn {
       -webkit-app-region: no-drag;
       background: rgba(84, 214, 185, 0.12);
@@ -162,9 +165,7 @@
       cursor: pointer;
     }
 
-    #openBtn:hover {
-      background: rgba(84, 214, 185, 0.2);
-    }
+    #openBtn:hover { background: rgba(84, 214, 185, 0.2); }
   </style>
 </head>
 <body>
@@ -180,12 +181,12 @@
 
     <div class="metric-row">
       <div class="metric">
-        <div class="label">Primary</div>
+        <div id="primaryLabel" class="label">Codex Primary</div>
         <div id="primaryValue" class="value">--</div>
         <div class="bar"><div id="primaryBar" class="bar-fill"></div></div>
       </div>
       <div class="metric">
-        <div class="label">Secondary</div>
+        <div id="secondaryLabel" class="label">Codex Secondary</div>
         <div id="secondaryValue" class="value">--</div>
         <div class="bar"><div id="secondaryBar" class="bar-fill"></div></div>
       </div>
@@ -199,6 +200,8 @@
 
   <script>
     const statusDot = document.getElementById("statusDot");
+    const primaryLabel = document.getElementById("primaryLabel");
+    const secondaryLabel = document.getElementById("secondaryLabel");
     const primaryValue = document.getElementById("primaryValue");
     const secondaryValue = document.getElementById("secondaryValue");
     const primaryBar = document.getElementById("primaryBar");
@@ -230,6 +233,7 @@
       const pct = Number(raw);
       if (!Number.isFinite(pct)) {
         valueEl.textContent = "?";
+        valueEl.className = "value";
         barEl.style.width = "0%";
         return;
       }
@@ -238,19 +242,40 @@
       setBarColor(barEl, valueEl, pct);
     }
 
+    function describeWindow(windowData, fallback) {
+      const minutes = Number(windowData?.window_minutes);
+      if (!Number.isFinite(minutes)) return fallback;
+      if (minutes === 300) return `${fallback} · 5h`;
+      if (minutes === 10080) return `${fallback} · 7d`;
+      return `${fallback} · ${minutes}m`;
+    }
+
+    function hasCurrentLimit(summary) {
+      const limitEvent = summary.timeline?.latest_limit_event;
+      if (!limitEvent?.timestamp) return false;
+      const quotaTime = summary.quota?.evidence_timestamp || summary.quota?.observed_at;
+      if (!quotaTime) return true;
+      return Date.parse(limitEvent.timestamp) >= Date.parse(quotaTime);
+    }
+
     async function poll() {
       const summary = await window.widgetBridge.getMonitorSummary();
+      lastUpdated.className = "";
       if (!summary.ok) {
         statusDot.className = "dot err";
         primaryValue.textContent = "--";
         secondaryValue.textContent = "--";
         primaryBar.style.width = "0%";
         secondaryBar.style.width = "0%";
-        lastUpdated.textContent = "server unreachable";
+        lastUpdated.textContent = "monitor API unreachable";
         return;
       }
 
       const quota = summary.quota || {};
+      const rateLimits = summary.timeline?.latest_rate_limits || {};
+      primaryLabel.textContent = describeWindow(rateLimits.primary, "Codex Primary");
+      secondaryLabel.textContent = describeWindow(rateLimits.secondary, "Codex Secondary");
+
       if (quota.status === "unknown") {
         statusDot.className = "dot warn";
         primaryValue.textContent = "?";
@@ -259,10 +284,17 @@
         return;
       }
 
-      statusDot.className = "dot ok";
       applyPercent(primaryValue, primaryBar, quota.primary_used_percent);
       applyPercent(secondaryValue, secondaryBar, quota.secondary_used_percent);
-      lastUpdated.textContent = `updated ${new Date(summary.observedAt).toLocaleTimeString()}`;
+
+      if (hasCurrentLimit(summary)) {
+        statusDot.className = "dot err";
+        lastUpdated.className = "limit";
+        lastUpdated.textContent = "USAGE LIMIT REACHED · see dashboard";
+      } else {
+        statusDot.className = "dot ok";
+        lastUpdated.textContent = `observed ${new Date(summary.observedAt).toLocaleTimeString()}`;
+      }
     }
 
     async function startPolling() {
