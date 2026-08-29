@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld("widgetBridge", {
   getSettings: () => ipcRenderer.invoke("get-settings"),
   getMonitorSummary: () => ipcRenderer.invoke("get-monitor-summary"),
   startMonitor: () => ipcRenderer.invoke("start-monitor"),
+  collectEvidence: () => ipcRenderer.invoke("collect-evidence"),
+  observeQuota: (sessionId) => ipcRenderer.invoke("observe-quota", sessionId),
   setWorkspacePath: (workspacePath) => ipcRenderer.invoke("set-workspace-path", workspacePath),
   createSession: () => ipcRenderer.invoke("create-session"),
   endSession: (sessionId) => ipcRenderer.invoke("end-session", sessionId),
