@@ -1,25 +1,26 @@
 """
 server.py
 
-Local HTTP API for the Personal Session Monitor. Run as a long-lived
-process started by start.sh on WSL. The dashboard (phase 5) reads from
-this instead of localStorage.
+Local HTTP API for the Session Monitor control plane.
+
+Read endpoints are side-effect free. Evidence enters the append-only ledger
+only through explicit session/observation/ingestion actions.
 
 Endpoints:
-    POST /sessions                 start a new session (always new — no resume)
-    POST /sessions/{id}/end        end a session
-    GET  /sessions                 list sessions, most recent first
-    GET  /sessions/{id}            full session record + its evidence events
-    GET  /today                    today's sessions + latest codex quota
-    GET  /codex/quota              latest observed quota, or {"status": "unknown"}
-    GET  /codex/rollout            recent parsed rollout records for a session
-    GET  /git/{session_id}         current git snapshot for that session's workspace
-    GET  /evidence/sources         source-health panel: last time each source produced data
-    GET  /timeline                 derived event timeline + reload/quota windows
-    POST /vscode/scan/{session_id} trigger a manual scan for new log dirs / IPC events
-
-Requires: fastapi, uvicorn
-    pip install fastapi uvicorn
+    GET  /health
+    POST /sessions
+    POST /sessions/{id}/end
+    GET  /sessions
+    GET  /sessions/{id}
+    GET  /today
+    GET  /codex/quota
+    POST /codex/quota/observe/{session_id}
+    GET  /codex/rollout?session_id=<id>
+    POST /codex/rollout/ingest/{session_id}
+    GET  /git/{session_id}
+    GET  /evidence/sources
+    GET  /timeline
+    POST /vscode/scan/{session_id}
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from storage import Storage
-from evidence import EvidenceLog
 from git_monitor import snapshot as git_snapshot
 import codex
 import correlation
@@ -42,22 +42,53 @@ DATA_DIR = Path.home() / ".local" / "share" / "personal-session-monitor"
 storage = Storage(DATA_DIR)
 app = FastAPI(title="Personal Session Monitor API")
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
 )
+
+
+def _latest_quota() -> dict:
+    latest = storage.evidence.latest_by("codex", "quota_update")
+    if latest is None:
+        return {"status": "unknown"}
+    normalized = latest.get("data", {}).get("normalized", {})
+    return {
+        "status": "observed",
+        **normalized,
+        "observed_via": latest.get("source_identifier"),
+        "evidence_timestamp": latest.get("timestamp"),
+    }
+
+
+def _session_or_none(session_id: str):
+    return storage.get_session(session_id)
+
+
+@app.get("/health")
+def health():
+    return {
+        "ok": True,
+        "service": "personal-session-monitor",
+        "data_dir": str(DATA_DIR),
+    }
 
 
 @app.post("/sessions")
 def start_session(workspace_path: str, source: str = "manual"):
     record = storage.create_session(workspace_path, source)
-    # Best-effort first-touch scans so a new session immediately has
-    # whatever quota/log evidence is already sitting on disk.
-    codex.read_current_quota(storage.evidence, record.id)
+    # Existing VS Code log directories are baseline state, not reload events.
     vscode_logs.baseline_session_dirs(DATA_DIR)
+    # Capture one real provider observation at the session boundary.
+    codex.read_current_quota(storage.evidence, record.id)
     return record.to_dict()
 
 
 @app.post("/sessions/{session_id}/end")
 def end_session(session_id: str):
+    if _session_or_none(session_id) is None:
+        return {"error": "not found"}
     storage.end_session(session_id)
     return {"id": session_id, "ended": True}
 
@@ -69,32 +100,55 @@ def list_sessions(limit: int = 50):
 
 @app.get("/sessions/{session_id}")
 def get_session(session_id: str):
-    record = storage.get_session(session_id)
+    record = _session_or_none(session_id)
     return record or {"error": "not found"}
 
 
 @app.get("/today")
 def today():
+    # Read-only: dashboard refreshes must never create evidence.
     sessions = storage.today_sessions()
-    quota = codex.read_current_quota(storage.evidence, sessions[0]["id"]) if sessions else None
     return {
         "sessions": sessions,
         "session_count": len(sessions),
-        "quota": quota or {"status": "unknown"},
+        "quota": _latest_quota(),
     }
 
 
 @app.get("/codex/quota")
 def quota():
-    latest = storage.evidence.latest_by("codex", "quota_update")
-    if latest is None:
-        return {"status": "unknown"}
-    return {"status": "observed", **latest["data"]["normalized"], "observed_via": latest["source_identifier"]}
+    # Read-only view of the latest persisted provider observation.
+    return _latest_quota()
+
+
+@app.post("/codex/quota/observe/{session_id}")
+def observe_quota(session_id: str):
+    session = _session_or_none(session_id)
+    if session is None:
+        return {"error": "not found"}
+    observed = codex.read_current_quota(storage.evidence, session_id)
+    return observed or {"status": "unknown"}
 
 
 @app.get("/codex/rollout")
 def rollout(session_id: str):
-    session = storage.get_session(session_id)
+    # Read-only view. Ingestion is a POST operation below.
+    session = _session_or_none(session_id)
+    if session is None:
+        return {"error": "not found"}
+    records = []
+    for event in session.get("events", []):
+        if event.get("source") != "codex_rollout":
+            continue
+        normalized = event.get("data", {}).get("normalized")
+        if normalized is not None:
+            records.append(normalized)
+    return {"records": records, "count": len(records)}
+
+
+@app.post("/codex/rollout/ingest/{session_id}")
+def ingest_rollout(session_id: str):
+    session = _session_or_none(session_id)
     if session is None:
         return {"error": "not found"}
     records = codex.read_recent_rollout_events(
@@ -108,7 +162,7 @@ def rollout(session_id: str):
 
 @app.get("/git/{session_id}")
 def git_state(session_id: str):
-    record = storage.get_session(session_id)
+    record = _session_or_none(session_id)
     if record is None:
         return {"error": "not found"}
     return git_snapshot(Path(record["workspace_path"]))
@@ -139,7 +193,7 @@ def timeline(session_id: Optional[str] = None, limit: int = 200):
 
 @app.post("/vscode/scan/{session_id}")
 def vscode_scan(session_id: str):
-    session = storage.get_session(session_id)
+    session = _session_or_none(session_id)
     if session is None:
         return {"error": "not found"}
     ended_before = session["ended_at"] or codex.now_iso()
@@ -159,4 +213,5 @@ def vscode_scan(session_id: str):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="127.0.0.1", port=18441)
