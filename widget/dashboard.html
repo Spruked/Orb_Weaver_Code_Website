@@ -4,631 +4,293 @@
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self';" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Session Monitor Dashboard</title>
+  <title>Orb Weaver Code Cipher Control Plane</title>
   <style>
     :root {
-      --bg: #0b0f12;
-      --panel: #10161b;
-      --border: rgba(84, 214, 185, 0.24);
+      --bg: #090d10;
+      --panel: #10171b;
+      --panel2: #0d1317;
+      --border: rgba(84,214,185,.22);
       --text: #e8f4f2;
-      --muted: #9eb2af;
+      --muted: #8da39f;
       --accent: #54d6b9;
       --warn: #f6c453;
       --danger: #ff6b63;
     }
-
     * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
-    }
-
-    main {
-      width: min(1120px, calc(100% - 32px));
-      margin: 0 auto;
-      padding: 24px 0;
-      display: grid;
-      gap: 14px;
-    }
-
-    header,
-    .toolbar,
-    .status,
-    .split-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    header {
-      justify-content: space-between;
-      align-items: end;
-    }
-
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 22px 0 36px; display: grid; gap: 12px; }
+    header, .toolbar, .row { display: flex; align-items: center; gap: 9px; }
+    header { justify-content: space-between; align-items: end; }
     h1, h2, h3, p { margin: 0; }
-
-    h1 { font-size: 32px; letter-spacing: 0; }
-    h2 { font-size: 15px; letter-spacing: 0; }
-    h3 { font-size: 13px; color: var(--muted); letter-spacing: 0; }
-
-    button {
-      border: 1px solid rgba(84, 214, 185, 0.34);
-      background: rgba(84, 214, 185, 0.12);
-      color: var(--text);
-      border-radius: 6px;
-      min-height: 36px;
-      padding: 0 12px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-
-    button:hover { background: rgba(84, 214, 185, 0.2); }
-
-    input {
-      width: 100%;
-      min-height: 36px;
-      border: 1px solid rgba(84, 214, 185, 0.24);
-      background: rgba(255, 255, 255, 0.04);
-      color: var(--text);
-      border-radius: 6px;
-      padding: 0 10px;
-      font: inherit;
-    }
-
-    .muted { color: var(--muted); font-size: 13px; }
-    .danger { color: var(--danger); }
-    .warn { color: var(--warn); }
+    h1 { font-size: 30px; }
+    h2 { font-size: 14px; }
+    h3 { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+    .muted { color: var(--muted); font-size: 12px; }
     .ok { color: var(--accent); }
-
-    .grid-4,
-    .grid-3,
-    .grid-2,
-    .control-grid {
-      display: grid;
-      gap: 12px;
+    .warn { color: var(--warn); }
+    .danger { color: var(--danger); }
+    button, input {
+      min-height: 36px; border-radius: 6px; border: 1px solid var(--border);
+      background: rgba(84,214,185,.09); color: var(--text); font: inherit;
     }
-
-    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .grid-2 { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); }
-    .control-grid { grid-template-columns: minmax(260px, 1fr) auto; align-items: end; }
-
-    .card {
-      min-width: 0;
-      border: 1px solid var(--border);
-      background: linear-gradient(145deg, rgba(16, 22, 27, 0.98), rgba(11, 15, 18, 0.98));
-      border-radius: 8px;
-      padding: 14px;
-      display: grid;
-      gap: 10px;
-    }
-
-    .metric {
-      font-size: 36px;
-      line-height: 1;
-      font-weight: 850;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .metric.warn { color: var(--warn); }
-    .metric.danger { color: var(--danger); }
-
-    .bar {
-      height: 8px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.08);
-      overflow: hidden;
-    }
-
-    .bar span {
-      display: block;
-      height: 100%;
-      width: 0%;
-      background: var(--accent);
-    }
-
-    .dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 999px;
-      background: #64748b;
-    }
-
-    .dot.ok { background: var(--accent); }
-    .dot.err { background: var(--danger); }
-    .dot.warn { background: var(--warn); }
-
-    .facts,
-    .timeline,
-    .list,
-    .button-grid {
-      display: grid;
-      gap: 8px;
-    }
-
-    .button-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-
-    .fact,
-    .timeline-row,
-    .list-row {
-      min-width: 0;
-      display: grid;
-      gap: 3px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid rgba(84, 214, 185, 0.09);
-    }
-
-    .fact:last-child,
-    .timeline-row:last-child,
-    .list-row:last-child {
-      border-bottom: 0;
-      padding-bottom: 0;
-    }
-
-    .timeline-row {
-      grid-template-columns: 165px 130px minmax(0, 1fr);
-      align-items: start;
-    }
-
-    .pill {
-      display: inline-flex;
-      width: fit-content;
-      border: 1px solid rgba(84, 214, 185, 0.24);
-      border-radius: 999px;
-      padding: 2px 8px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    #actionLog {
-      min-height: 24px;
-    }
-
-    code {
-      color: var(--text);
-      font-family: "JetBrains Mono", Consolas, monospace;
-      font-size: 12px;
-      overflow-wrap: anywhere;
-    }
-
-    @media (max-width: 940px) {
-      .grid-4,
-      .grid-3,
-      .grid-2,
-      .control-grid,
-      .button-grid,
-      .timeline-row {
-        grid-template-columns: 1fr;
-      }
-
-      header {
-        align-items: start;
-        flex-direction: column;
-      }
+    button { padding: 0 11px; font-weight: 700; cursor: pointer; }
+    button:hover { background: rgba(84,214,185,.17); }
+    button:disabled { opacity: .45; cursor: default; }
+    input { width: 100%; padding: 0 10px; background: rgba(255,255,255,.035); }
+    code { color: var(--text); font-family: "JetBrains Mono", Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
+    .grid2, .grid3, .grid4 { display: grid; gap: 12px; }
+    .grid2 { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .grid3 { grid-template-columns: repeat(3,minmax(0,1fr)); }
+    .grid4 { grid-template-columns: repeat(4,minmax(0,1fr)); }
+    .card { min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: linear-gradient(145deg,var(--panel),var(--panel2)); display: grid; gap: 9px; }
+    .metric { font-size: 34px; line-height: 1; font-weight: 850; font-variant-numeric: tabular-nums; }
+    .bar { height: 7px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,.07); }
+    .bar > span { display: block; width: 0; height: 100%; background: var(--accent); }
+    .facts, .list, .timeline { display: grid; gap: 7px; }
+    .fact, .item { display: grid; gap: 2px; padding-bottom: 7px; border-bottom: 1px solid rgba(84,214,185,.08); }
+    .fact:last-child, .item:last-child { border-bottom: 0; padding-bottom: 0; }
+    .timeline .item { grid-template-columns: 155px 120px minmax(0,1fr); align-items: start; }
+    .controls { display: grid; grid-template-columns: minmax(260px,1fr) auto; gap: 8px; align-items: end; }
+    .buttons { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 8px; }
+    .pill { width: fit-content; border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; font-size: 11px; color: var(--muted); }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #64748b; }
+    .dot.ok { background: var(--accent); } .dot.warn { background: var(--warn); } .dot.err { background: var(--danger); }
+    #actionLog { min-height: 16px; }
+    @media (max-width: 900px) {
+      .grid2,.grid3,.grid4,.controls,.buttons,.timeline .item { grid-template-columns: 1fr; }
+      header { flex-direction: column; align-items: start; }
     }
   </style>
 </head>
 <body>
-  <main>
-    <header>
-      <div>
-        <h1>Session Monitor Dashboard</h1>
-        <p id="subtitle" class="muted">Runtime evidence and Code Cipher release evidence stay separate.</p>
-      </div>
-      <div class="toolbar">
-        <button id="startBtn">Start Monitor</button>
-        <button id="refreshBtn">Refresh</button>
-      </div>
-    </header>
+<main>
+  <header>
+    <div>
+      <p class="muted">ORB WEAVER CODE CIPHER</p>
+      <h1>Session Monitor Control Plane</h1>
+      <p id="subtitle" class="muted">Runtime evidence and release evidence remain independently verifiable.</p>
+    </div>
+    <div class="toolbar"><button id="startApiBtn">Start / Check API</button><button id="refreshBtn">Refresh</button></div>
+  </header>
 
-    <section class="card">
-      <h2>Operational Controls</h2>
-      <div class="control-grid">
-        <div>
-          <h3>Workspace</h3>
-          <input id="workspaceInput" />
-        </div>
-        <button id="saveWorkspaceBtn">Save Workspace</button>
-      </div>
-      <div class="button-grid">
-        <button id="createSessionBtn">Start Session</button>
-        <button id="endSessionBtn">End Session</button>
-        <button id="scanVsCodeBtn">Scan VS Code</button>
-        <button id="ingestRolloutBtn">Ingest Codex</button>
-        <button id="scanCodeBtn">Scan Code</button>
-      </div>
-      <code id="actionLog">ready</code>
-    </section>
+  <section class="card">
+    <h2>Operational Controls</h2>
+    <div class="controls">
+      <div><h3>Workspace</h3><input id="workspaceInput" /></div>
+      <button id="saveWorkspaceBtn">Save Workspace</button>
+    </div>
+    <div class="buttons">
+      <button id="startSessionBtn">Start Session</button>
+      <button id="endSessionBtn">End Session</button>
+      <button id="collectBtn">Collect Now</button>
+      <button id="scanVsCodeBtn">Scan VS Code</button>
+      <button id="ingestBtn">Ingest Codex</button>
+      <button id="scanCodeBtn">Scan Code</button>
+    </div>
+    <code id="actionLog">ready</code>
+  </section>
 
-    <section class="grid-4">
-      <article class="card">
-        <h2>Primary Quota</h2>
-        <div id="primaryMetric" class="metric">--</div>
-        <div class="bar"><span id="primaryBar"></span></div>
-      </article>
-      <article class="card">
-        <h2>Secondary Quota</h2>
-        <div id="secondaryMetric" class="metric">--</div>
-        <div class="bar"><span id="secondaryBar"></span></div>
-      </article>
-      <article class="card">
-        <h2>Monitor API</h2>
-        <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">offline</span></div>
-        <code id="apiBase"></code>
-      </article>
-      <article class="card">
-        <h2>Code Cipher</h2>
-        <div id="cipherStatus" class="metric">--</div>
-        <span id="cipherRelease" class="pill"></span>
-      </article>
-    </section>
+  <section class="grid4">
+    <article class="card"><h2 id="primaryTitle">Codex Primary</h2><div id="primaryMetric" class="metric">--</div><div class="bar"><span id="primaryBar"></span></div><code id="primaryReset">window unknown</code></article>
+    <article class="card"><h2 id="secondaryTitle">Codex Secondary</h2><div id="secondaryMetric" class="metric">--</div><div class="bar"><span id="secondaryBar"></span></div><code id="secondaryReset">window unknown</code></article>
+    <article class="card"><h2>Limit State</h2><div id="limitState" class="metric">--</div><code id="limitDetail">no observed limit event</code></article>
+    <article class="card"><h2>Monitor API</h2><div class="row"><span id="statusDot" class="dot"></span><strong id="statusText">offline</strong></div><code id="apiBase"></code></article>
+  </section>
 
-    <section class="grid-2">
-      <article class="card">
-        <h2>Evidence Correlation</h2>
-        <div id="correlation" class="list"></div>
-      </article>
-      <article class="card">
-        <h2>Token Economics</h2>
-        <div id="tokens" class="facts"></div>
-      </article>
-    </section>
+  <section class="grid2">
+    <article class="card"><h2>Current Session</h2><div id="sessionFacts" class="facts"></div></article>
+    <article class="card"><h2>Workspace / Git</h2><div id="gitFacts" class="facts"></div></article>
+  </section>
 
-    <section class="grid-2">
-      <article class="card">
-        <h2>Recent Timeline</h2>
-        <div id="timeline" class="timeline"></div>
-      </article>
-      <article class="card">
-        <h2>Session Monitor Evidence</h2>
-        <div id="sessionFacts" class="facts"></div>
-      </article>
-    </section>
+  <section class="grid2">
+    <article class="card"><h2>Token Evidence</h2><div id="tokens" class="facts"></div></article>
+    <article class="card"><h2>Code Cipher Release Evidence</h2><div id="cipherFacts" class="facts"></div><div id="artifacts" class="list"></div></article>
+  </section>
 
-    <section class="grid-3">
-      <article class="card">
-        <h2>Code Cipher Artifact Evidence</h2>
-        <div id="artifacts" class="list"></div>
-      </article>
-      <article class="card">
-        <h2>Workspace Code Scan</h2>
-        <div id="codeScan" class="list"></div>
-      </article>
-      <article class="card">
-        <h2>Reload / IPC Windows</h2>
-        <div id="reloads" class="list"></div>
-      </article>
-    </section>
+  <section class="grid2">
+    <article class="card"><h2>Runtime ↔ Cipher Correlation</h2><div id="correlation" class="list"></div></article>
+    <article class="card"><h2>Reload / IPC Impact</h2><div id="reloads" class="list"></div></article>
+  </section>
 
-    <section class="grid-3">
-      <article class="card">
-        <h2>Workspace / Git</h2>
-        <div id="gitFacts" class="facts"></div>
-      </article>
-      <article class="card">
-        <h2>External API Proxy</h2>
-        <div class="facts">
-          <div class="fact"><span class="muted">Mode</span><code>Planned local proxy interceptor</code></div>
-          <div class="fact"><span class="muted">Provider Routes</span><code>/v1/chat/completions, /v1/responses, /v1/messages</code></div>
-          <div class="fact"><span class="muted">Ledger</span><code>Separate API transaction evidence store</code></div>
-        </div>
-      </article>
-    </section>
+  <section class="card"><h2>Recent Session Timeline</h2><div id="timeline" class="timeline"></div></section>
 
-    <section class="card">
-      <h2>Source Health</h2>
-      <div id="sources" class="list"></div>
-    </section>
-  </main>
+  <section class="grid2">
+    <article class="card"><h2>Workspace Code Scan</h2><div id="codeScan" class="list"></div></article>
+    <article class="card"><h2>Evidence Source Health</h2><div id="sources" class="list"></div></article>
+  </section>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let latestSummary = null;
 
-  <script>
-    const $ = (id) => document.getElementById(id);
-    const subtitle = $("subtitle");
-    const refreshBtn = $("refreshBtn");
-    const startBtn = $("startBtn");
-    const workspaceInput = $("workspaceInput");
-    const saveWorkspaceBtn = $("saveWorkspaceBtn");
-    const createSessionBtn = $("createSessionBtn");
-    const endSessionBtn = $("endSessionBtn");
-    const scanVsCodeBtn = $("scanVsCodeBtn");
-    const ingestRolloutBtn = $("ingestRolloutBtn");
-    const scanCodeBtn = $("scanCodeBtn");
-    const actionLog = $("actionLog");
-    const primaryMetric = $("primaryMetric");
-    const secondaryMetric = $("secondaryMetric");
-    const primaryBar = $("primaryBar");
-    const secondaryBar = $("secondaryBar");
-    const statusDot = $("statusDot");
-    const statusText = $("statusText");
-    const apiBase = $("apiBase");
-    const cipherStatus = $("cipherStatus");
-    const cipherRelease = $("cipherRelease");
-    const correlation = $("correlation");
-    const tokens = $("tokens");
-    const timeline = $("timeline");
-    const sessionFacts = $("sessionFacts");
-    const artifacts = $("artifacts");
-    const codeScan = $("codeScan");
-    const gitFacts = $("gitFacts");
-    const reloads = $("reloads");
-    const sources = $("sources");
-    let latestSummary = null;
+  function escapeHtml(value) {
+    return String(value ?? "Unknown").replace(/[&<>"']/g, (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[ch]);
+  }
+  function short(value, max = 64) { const text = String(value ?? "Unknown"); return text.length > max ? `${text.slice(0,28)}...${text.slice(-24)}` : text; }
+  function time(value) { if (!value) return "Unknown"; const d = new Date(value); return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString(); }
+  function epochTime(value) { const n = Number(value); return Number.isFinite(n) ? new Date(n * 1000).toLocaleString() : "Unknown"; }
+  function fact(label, value) { return `<div class="fact"><span class="muted">${escapeHtml(label)}</span><code>${escapeHtml(value)}</code></div>`; }
+  function item(title, detail, meta = "") { return `<div class="item"><strong>${escapeHtml(title)}</strong><span class="muted">${escapeHtml(detail)}</span><code>${escapeHtml(meta)}</code></div>`; }
+  function activeSession() { return latestSummary?.today?.sessions?.find((s) => !s.ended_at) || null; }
 
-    refreshBtn.addEventListener("click", refresh);
-    startBtn.addEventListener("click", async () => {
-      startBtn.disabled = true;
-      startBtn.textContent = "Starting...";
-      await window.widgetBridge.startMonitor();
-      setTimeout(refresh, 1000);
-      setTimeout(() => {
-        startBtn.disabled = false;
-        startBtn.textContent = "Start Monitor";
-      }, 1200);
-    });
-    saveWorkspaceBtn.addEventListener("click", async () => {
-      const result = await window.widgetBridge.setWorkspacePath(workspaceInput.value);
-      actionLog.textContent = result.ok ? "workspace saved" : result.error;
-      refresh();
-    });
-    createSessionBtn.addEventListener("click", async () => {
-      actionLog.textContent = "starting session...";
-      const result = await window.widgetBridge.createSession();
-      actionLog.textContent = result.ok ? `session ${result.session.id} started` : result.error;
-      refresh();
-    });
-    endSessionBtn.addEventListener("click", async () => {
-      const sessionId = activeSessionId();
-      if (!sessionId) {
-        actionLog.textContent = "no active session to end";
-        return;
-      }
-      const result = await window.widgetBridge.endSession(sessionId);
-      actionLog.textContent = result.ok ? `session ${sessionId} ended` : result.error;
-      refresh();
-    });
-    scanVsCodeBtn.addEventListener("click", async () => {
-      const sessionId = activeSessionId();
-      if (!sessionId) {
-        actionLog.textContent = "start a session before scanning VS Code";
-        return;
-      }
-      const result = await window.widgetBridge.scanVsCode(sessionId);
-      const scan = result.result || {};
-      actionLog.textContent = result.ok
-        ? `VS Code scan: ${(scan.new_log_dirs || []).length} dirs, ${(scan.ipc_events || []).length} IPC events`
-        : result.error;
-      refresh();
-    });
-    ingestRolloutBtn.addEventListener("click", async () => {
-      const sessionId = activeSessionId();
-      if (!sessionId) {
-        actionLog.textContent = "start a session before ingesting Codex records";
-        return;
-      }
-      const result = await window.widgetBridge.ingestRollout(sessionId);
-      actionLog.textContent = result.ok ? `Codex ingest: ${result.result.count || 0} records` : result.error;
-      refresh();
-    });
-    scanCodeBtn.addEventListener("click", async () => {
-      const result = await window.widgetBridge.scanWorkspace();
-      actionLog.textContent = result.ok ? `code scan: ${result.scan.fileCount} files` : result.error;
-      refresh();
-    });
+  function setPercent(metric, bar, raw) {
+    const value = Number(raw);
+    metric.className = "metric";
+    if (!Number.isFinite(value)) { metric.textContent = "?"; bar.style.width = "0%"; return; }
+    metric.textContent = `${value}%`;
+    bar.style.width = `${Math.min(100,Math.max(0,value))}%`;
+    if (value >= 90) { metric.classList.add("danger"); bar.style.background = "var(--danger)"; }
+    else if (value >= 75) { metric.classList.add("warn"); bar.style.background = "var(--warn)"; }
+    else { bar.style.background = "var(--accent)"; }
+  }
 
-    function escapeHtml(value) {
-      return String(value ?? "Unknown").replace(/[&<>"']/g, (ch) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      })[ch]);
+  function windowLabel(name, data) {
+    const minutes = Number(data?.window_minutes);
+    if (minutes === 300) return `${name} · 5 hour`;
+    if (minutes === 10080) return `${name} · 7 day`;
+    return Number.isFinite(minutes) ? `${name} · ${minutes} min` : name;
+  }
+
+  function currentLimit(summary) {
+    const event = summary.timeline?.latest_limit_event;
+    if (!event?.timestamp) return null;
+    const quotaTs = summary.quota?.evidence_timestamp || summary.quota?.observed_at;
+    if (!quotaTs) return event;
+    return Date.parse(event.timestamp) >= Date.parse(quotaTs) ? event : null;
+  }
+
+  function render(summary) {
+    latestSummary = summary;
+    $("workspaceInput").value = summary.workspacePath || "";
+    $("apiBase").textContent = summary.apiBase || "";
+    $("subtitle").textContent = summary.ok ? `Updated ${time(summary.observedAt)}` : (summary.error || "Monitor API unavailable");
+
+    const cipher = summary.codeCipher || {};
+    renderCipher(cipher);
+    renderCodeScan(summary.workspaceScan);
+
+    if (!summary.ok) {
+      $("statusDot").className = "dot err"; $("statusText").textContent = "offline";
+      setPercent($("primaryMetric"), $("primaryBar"), null); setPercent($("secondaryMetric"), $("secondaryBar"), null);
+      $("limitState").textContent = "?"; $("limitDetail").textContent = "monitor offline";
+      $("sessionFacts").innerHTML = fact("Monitor", "offline");
+      $("gitFacts").innerHTML = fact("Workspace", summary.workspacePath);
+      $("tokens").innerHTML = fact("Token evidence", "unavailable");
+      $("correlation").innerHTML = item("Runtime unavailable", "Code Cipher evidence remains separate");
+      $("reloads").innerHTML = item("No live view", "Monitor API offline");
+      $("timeline").innerHTML = '<span class="muted">Monitor API offline.</span>';
+      $("sources").innerHTML = item("No source health", "Monitor API offline");
+      return;
     }
 
-    function clsForPercent(value) {
-      if (value >= 90) return "metric danger";
-      if (value >= 75) return "metric warn";
-      return "metric";
+    $("statusDot").className = "dot ok"; $("statusText").textContent = "online";
+    const quota = summary.quota || {};
+    const t = summary.timeline || {};
+    const rate = t.latest_rate_limits || {};
+    setPercent($("primaryMetric"), $("primaryBar"), quota.primary_used_percent);
+    setPercent($("secondaryMetric"), $("secondaryBar"), quota.secondary_used_percent);
+    $("primaryTitle").textContent = windowLabel("Codex Primary", rate.primary);
+    $("secondaryTitle").textContent = windowLabel("Codex Secondary", rate.secondary);
+    $("primaryReset").textContent = rate.primary ? `reset ${epochTime(rate.primary.resets_at)}` : "window metadata not observed";
+    $("secondaryReset").textContent = rate.secondary ? `reset ${epochTime(rate.secondary.resets_at)}` : "window metadata not observed";
+
+    const limit = currentLimit(summary);
+    if (limit) {
+      $("limitState").textContent = "REACHED"; $("limitState").className = "metric danger";
+      $("limitDetail").textContent = `${limit.error_code || "usage_limit_exceeded"} · ${time(limit.timestamp)}`;
+    } else {
+      $("limitState").textContent = "CLEAR"; $("limitState").className = "metric ok";
+      $("limitDetail").textContent = t.latest_limit_event ? `last limit ${time(t.latest_limit_event.timestamp)}` : "no observed limit event";
     }
 
-    function setQuota(metric, bar, raw) {
-      const value = Number(raw);
-      if (!Number.isFinite(value)) {
-        metric.textContent = "--";
-        metric.className = "metric";
-        bar.style.width = "0%";
-        return;
-      }
-      metric.textContent = `${value}%`;
-      metric.className = clsForPercent(value);
-      bar.style.width = `${Math.min(100, Math.max(0, value))}%`;
-    }
+    const sessions = summary.today?.sessions || [];
+    const session = sessions.find((s) => !s.ended_at) || sessions[0] || null;
+    const counts = t.counts || {};
+    const sourceCounts = t.rollout_source_counts || {};
+    $("sessionFacts").innerHTML = [
+      fact("Session ID", session?.id), fact("Started", time(session?.started_at)), fact("Ended", session?.ended_at ? time(session.ended_at) : "ACTIVE"),
+      fact("Workspace", session?.workspace_path), fact("Timeline events", t.event_count ?? 0),
+      fact("Quota / rollout", `${counts.quota_update ?? 0} / ${counts.rollout_record ?? 0}`),
+      fact("Token / task complete", `${sourceCounts.token_count ?? 0} / ${sourceCounts.task_complete ?? 0}`)
+    ].join("");
 
-    function renderFact(label, value) {
-      return `<div class="fact"><span class="muted">${escapeHtml(label)}</span><code>${escapeHtml(value)}</code></div>`;
-    }
+    const git = summary.git || {};
+    $("gitFacts").innerHTML = [
+      fact("Repository", git.repo_root || session?.repo_root), fact("Branch", git.branch || session?.branch), fact("HEAD", git.head || session?.head),
+      fact("Remote", short(git.remote || session?.remote)), fact("Modified / untracked / staged", `${git.modified_files ?? "?"} / ${git.untracked_files ?? "?"} / ${git.staged_files ?? "?"}`),
+      fact("Ahead / behind", `${git.ahead ?? "?"} / ${git.behind ?? "?"}`)
+    ].join("");
 
-    function renderListRow(title, detail, meta) {
-      return `<div class="list-row"><strong>${escapeHtml(title)}</strong><span class="muted">${escapeHtml(detail)}</span><code>${escapeHtml(meta)}</code></div>`;
-    }
+    const token = t.token_usage_summary || {};
+    const sum = token.summed_last_token_usage || {};
+    $("tokens").innerHTML = [
+      fact("Attributed turns", token.attributed_last_usage_turn_count ?? 0), fact("Unattributed snapshots", token.unattributed_last_usage_record_count ?? 0),
+      fact("Input", sum.input_tokens ?? 0), fact("Cached input", sum.cached_input_tokens ?? 0), fact("Output", sum.output_tokens ?? 0),
+      fact("Reasoning", sum.reasoning_output_tokens ?? 0), fact("Total attributed", sum.total_tokens ?? 0), fact("Max cumulative snapshot", token.max_total_tokens ?? "Unknown")
+    ].join("");
 
-    function activeSessionId() {
-      const session = latestSummary?.today?.sessions?.find((item) => !item.ended_at) || latestSummary?.today?.sessions?.[0];
-      return session?.id || null;
-    }
+    renderCorrelation(session, cipher);
+    $("reloads").innerHTML = (t.reload_quota_windows || []).length
+      ? t.reload_quota_windows.slice(-6).reverse().map((w) => item(w.reload_event?.event_type || "reload", w.reload_event?.summary || "reload signal", `Δ primary ${w.quota_delta?.primary_used_percent ?? "?"}% · secondary ${w.quota_delta?.secondary_used_percent ?? "?"}%`)).join("")
+      : item("No reload windows", "No live reload/IPC evidence in this session", "");
 
-    function formatTime(value) {
-      if (!value || value === "Unknown") return "Unknown";
-      return new Date(value).toLocaleString();
-    }
+    $("timeline").innerHTML = (t.timeline || []).length
+      ? t.timeline.slice(-18).reverse().map((e) => `<div class="item"><span class="muted">${escapeHtml(time(e.timestamp))}</span><code>${escapeHtml(e.event_type)}</code><span>${escapeHtml(e.summary || "")}</span></div>`).join("")
+      : '<span class="muted">No session events yet.</span>';
 
-    function shortValue(value) {
-      const text = String(value ?? "Unknown");
-      return text.length > 58 ? `${text.slice(0, 24)}...${text.slice(-20)}` : text;
-    }
+    const sourceEntries = Object.entries(summary.sources || {});
+    $("sources").innerHTML = sourceEntries.length
+      ? sourceEntries.map(([name,r]) => item(name, `${r.category} / ${r.evidence_class}`, time(r.last_seen))).join("")
+      : item("No sources", "No evidence source has reported yet", "");
+  }
 
-    function renderCipher(cipher) {
-      cipherStatus.textContent = cipher.verificationResult === "PENDING_REAL_RELEASE_EVIDENCE" ? "Pending" : cipher.verificationResult;
-      cipherStatus.className = cipher.verificationResult === "VERIFIED" ? "metric ok" : "metric warn";
-      cipherRelease.textContent = `${cipher.releaseId} / ${cipher.version}`;
-      artifacts.innerHTML = (cipher.artifacts || []).length
-        ? cipher.artifacts.map((artifact) => renderListRow(artifact.filename, `${artifact.platform} / ${artifact.sku}`, artifact.sha256)).join("")
-        : renderListRow("No artifacts", "Release manifest has no artifact rows", "");
-    }
+  function renderCipher(cipher) {
+    $("cipherFacts").innerHTML = [fact("Release", cipher.releaseId), fact("Version", cipher.version), fact("Repository", cipher.repository), fact("Source HEAD", cipher.gitCommit), fact("Manifest hash", cipher.sourceManifestHash), fact("Verification", cipher.verificationResult)].join("");
+    const rows = Array.isArray(cipher.artifacts) ? cipher.artifacts : [];
+    $("artifacts").innerHTML = rows.length ? rows.map((a) => item(a.filename, `${a.platform} / ${a.sku}`, a.sha256)).join("") : item("No protected artifact evidence", "Release manifest contains no completed artifact", "");
+  }
 
-    function renderCodeScan(scan) {
-      if (!scan) {
-        codeScan.innerHTML = renderListRow("No scan", "Workspace has not been scanned", "");
-        return;
-      }
-      const extensions = (scan.topExtensions || []).map((item) => `${item.extension} ${item.count}`).join(", ");
-      const changed = (scan.changed || []).slice(0, 8).join(" | ");
-      codeScan.innerHTML = [
-        renderListRow("Files", `${scan.fileCount || 0} scanned`, `${Math.round((scan.totalBytes || 0) / 1024)} KB`),
-        renderListRow("Top Types", extensions || "No files", scan.root),
-        renderListRow("Changed Files", changed || "clean or unavailable", `${(scan.changed || []).length} total`),
-        renderListRow("Package Manifests", (scan.manifests || []).join(" | ") || "none", ""),
-        renderListRow("Cipher/Security Files", (scan.protectedFiles || []).slice(0, 6).join(" | ") || "none", `${(scan.protectedFiles || []).length} total`),
-      ].join("");
-    }
+  function renderCorrelation(session, cipher) {
+    const repoName = session?.repo_root?.split(/[\\/]/).filter(Boolean).pop();
+    const cipherName = cipher.repository?.split(/[\\/]/).filter(Boolean).pop();
+    const repoState = repoName && cipherName ? (repoName === cipherName ? "MATCH" : "MISMATCH") : "UNKNOWN";
+    const headState = session?.head && cipher.gitCommit ? (session.head === cipher.gitCommit ? "MATCH" : "MISMATCH") : "UNKNOWN";
+    $("correlation").innerHTML = [
+      item(`Repository: ${repoState}`, `Monitor: ${short(session?.repo_root)}`, `Cipher: ${short(cipher.repository)}`),
+      item(`Git HEAD: ${headState}`, `Monitor: ${short(session?.head)}`, `Cipher: ${short(cipher.gitCommit)}`),
+      item("Source manifest: UNKNOWN", "Monitor-side source manifest not yet sealed", `Cipher: ${short(cipher.sourceManifestHash)}`),
+      item("Release identity", `Session: ${short(session?.id)}`, `Release: ${short(cipher.releaseId)}`)
+    ].join("");
+  }
 
-    function renderGit(summary) {
-      const git = summary.git || {};
-      const latestSession = (summary.today?.sessions || [])[0];
-      gitFacts.innerHTML = [
-        renderFact("Repo Root", git.repo_root || latestSession?.repo_root),
-        renderFact("Branch", git.branch || latestSession?.branch),
-        renderFact("HEAD", git.head || latestSession?.head),
-        renderFact("Remote", git.remote || latestSession?.remote),
-        renderFact("Remote Host", git.remote_host || latestSession?.remote_host),
-        renderFact("Modified / Untracked / Staged", `${git.modified_files ?? "?"} / ${git.untracked_files ?? "?"} / ${git.staged_files ?? "?"}`),
-        renderFact("Ahead / Behind", `${git.ahead ?? "?"} / ${git.behind ?? "?"}`),
-      ].join("");
-    }
+  function renderCodeScan(scan) {
+    if (!scan) { $("codeScan").innerHTML = item("No scan", "Workspace not scanned", ""); return; }
+    const ext = Array.isArray(scan.topExtensions) ? scan.topExtensions.map((e) => `${e.extension} ${e.count}`).join(", ") : "";
+    const changed = Array.isArray(scan.changed) ? scan.changed : [];
+    $("codeScan").innerHTML = [item("Files", `${scan.fileCount || 0} scanned`, `${Math.round((scan.totalBytes || 0)/1024)} KB`), item("Top types", ext || "none", short(scan.root)), item("Changed", changed.slice(0,8).join(" | ") || "clean", `${changed.length} total`), item("Manifests", (scan.manifests || []).join(" | ") || "none", "")].join("");
+  }
 
-    function renderCorrelation(summary) {
-      const latestSession = (summary.today?.sessions || [])[0];
-      const cipher = summary.codeCipher;
-      const repoName = latestSession?.repo_root?.split(/[\\/]/).filter(Boolean).pop();
-      const cipherRepo = cipher.repository?.split(/[\\/]/).filter(Boolean).pop();
-      const rows = [
-        ["Repository", repoName && cipherRepo ? (repoName === cipherRepo ? "match" : "mismatch") : "unknown", latestSession?.repo_root, cipher.repository],
-        ["Git Commit", latestSession?.head && cipher.gitCommit ? (latestSession.head === cipher.gitCommit ? "match" : "mismatch") : "unknown", latestSession?.head, cipher.gitCommit],
-        ["Source Manifest", "unknown", "monitor source manifest not captured", cipher.sourceManifestHash],
-        ["Release Identity", cipher.releaseId ? "known" : "unknown", latestSession?.id, cipher.releaseId],
-      ];
-      correlation.innerHTML = rows.map(([label, state, monitor, cipherValue]) =>
-        renderListRow(`${label}: ${state}`, `Monitor: ${shortValue(monitor)}`, `Cipher: ${shortValue(cipherValue)}`)
-      ).join("");
-    }
+  async function refresh() { render(await window.widgetBridge.getMonitorSummary()); }
+  async function act(message, fn) {
+    $("actionLog").textContent = message;
+    try { const result = await fn(); $("actionLog").textContent = result?.ok === false ? result.error : JSON.stringify(result); }
+    catch (error) { $("actionLog").textContent = String(error); }
+    await refresh();
+  }
 
-    function renderOnline(summary) {
-      const quota = summary.quota || {};
-      const today = summary.today || {};
-      const data = summary.timeline || {};
-      const tokenSummary = data.token_usage_summary || {};
-      const latestSession = (today.sessions || [])[0];
-      const counts = data.counts || {};
-      workspaceInput.value = summary.workspacePath || "";
+  $("refreshBtn").addEventListener("click", refresh);
+  $("startApiBtn").addEventListener("click", () => act("checking monitor API...", () => window.widgetBridge.startMonitor()));
+  $("saveWorkspaceBtn").addEventListener("click", () => act("saving workspace...", () => window.widgetBridge.setWorkspacePath($("workspaceInput").value)));
+  $("startSessionBtn").addEventListener("click", () => act("starting session...", () => window.widgetBridge.createSession()));
+  $("endSessionBtn").addEventListener("click", () => { const s = activeSession(); return s ? act("ending session...", () => window.widgetBridge.endSession(s.id)) : ($("actionLog").textContent = "no active session"); });
+  $("collectBtn").addEventListener("click", () => act("collecting evidence...", () => window.widgetBridge.collectEvidence()));
+  $("scanVsCodeBtn").addEventListener("click", () => { const s = activeSession(); return s ? act("scanning VS Code...", () => window.widgetBridge.scanVsCode(s.id)) : ($("actionLog").textContent = "start a session first"); });
+  $("ingestBtn").addEventListener("click", () => { const s = activeSession(); return s ? act("ingesting Codex...", () => window.widgetBridge.ingestRollout(s.id)) : ($("actionLog").textContent = "start a session first"); });
+  $("scanCodeBtn").addEventListener("click", () => act("scanning workspace...", () => window.widgetBridge.scanWorkspace()));
 
-      subtitle.textContent = `Updated ${formatTime(summary.observedAt)}`;
-      statusDot.className = "dot ok";
-      statusText.textContent = "online";
-      apiBase.textContent = summary.apiBase || "";
-      setQuota(primaryMetric, primaryBar, quota.primary_used_percent);
-      setQuota(secondaryMetric, secondaryBar, quota.secondary_used_percent);
-
-      sessionFacts.innerHTML = [
-        renderFact("Sessions Today", today.session_count),
-        renderFact("Latest Session", latestSession?.id),
-        renderFact("Workspace", latestSession?.workspace_path),
-        renderFact("Branch / HEAD", latestSession ? `${latestSession.branch || "Unknown"} / ${latestSession.head || "Unknown"}` : null),
-        renderFact("Timeline Events", data.event_count ?? 0),
-        renderFact("Quota Events", counts.quota_update ?? 0),
-        renderFact("Rollout Records", counts.rollout_record ?? 0),
-        renderFact("Reload / IPC Events", (counts.new_log_session_dir ?? 0) + (counts.ipc_event ?? 0)),
-      ].join("");
-
-      tokens.innerHTML = [
-        renderFact("Attributed Turns", tokenSummary.attributed_last_usage_turn_count ?? 0),
-        renderFact("Unattributed Snapshots", tokenSummary.unattributed_last_usage_record_count ?? 0),
-        renderFact("Summed Attributed Total", tokenSummary.summed_last_token_usage?.total_tokens ?? 0),
-        renderFact("Max Cumulative Snapshot", tokenSummary.max_total_tokens ?? 0),
-        renderFact("Cumulative Snapshots", tokenSummary.cumulative_snapshot_count ?? 0),
-      ].join("");
-
-      const rows = (data.timeline || []).slice(-14).reverse();
-      timeline.innerHTML = rows.length
-        ? rows.map((item) => `
-          <div class="timeline-row">
-            <span class="muted">${escapeHtml(formatTime(item.timestamp))}</span>
-            <code>${escapeHtml(item.event_type)}</code>
-            <span>${escapeHtml(item.summary || "")}</span>
-          </div>
-        `).join("")
-        : '<p class="muted">No timeline events yet.</p>';
-
-      reloads.innerHTML = (data.reload_quota_windows || []).length
-        ? data.reload_quota_windows.slice(-6).reverse().map((window) =>
-          renderListRow(
-            window.reload_event?.event_type || "reload",
-            window.reload_event?.summary || "Reload signal",
-            `delta ${window.quota_delta?.primary_used_percent ?? "?"}% / ${window.quota_delta?.secondary_used_percent ?? "?"}%`
-          )
-        ).join("")
-        : renderListRow("No reload windows", "No live reload or IPC reset evidence in the current timeline", "");
-
-      sources.innerHTML = Object.keys(summary.sources || {}).length
-        ? Object.entries(summary.sources).map(([name, record]) =>
-          renderListRow(name, `${record.category} / ${record.evidence_class}`, formatTime(record.last_seen))
-        ).join("")
-        : renderListRow("No sources", "Monitor API is online but no evidence source health exists yet", "");
-      renderCodeScan(summary.workspaceScan);
-      renderGit(summary);
-    }
-
-    function renderOffline(summary) {
-      subtitle.textContent = summary.error || "Monitor API is unreachable";
-      statusDot.className = "dot err";
-      statusText.textContent = "offline";
-      apiBase.textContent = summary.apiBase || "";
-      workspaceInput.value = summary.workspacePath || "";
-      setQuota(primaryMetric, primaryBar, null);
-      setQuota(secondaryMetric, secondaryBar, null);
-      sessionFacts.innerHTML = [
-        renderFact("Monitor", "offline"),
-        renderFact("Action", "Start Monitor, then refresh"),
-        renderFact("API Error", summary.error || "Unknown"),
-      ].join("");
-      tokens.innerHTML = renderFact("Token Evidence", "Unavailable until monitor API is online");
-      correlation.innerHTML = renderListRow("Runtime evidence unavailable", "Code Cipher evidence is still shown separately", "No reconciliation attempted");
-      timeline.innerHTML = '<p class="muted">Start the monitor API to load runtime events.</p>';
-      reloads.innerHTML = renderListRow("No reload windows", "Monitor API offline", "");
-      sources.innerHTML = renderListRow("No source health", "Monitor API offline", "");
-      renderCodeScan(summary.workspaceScan);
-      gitFacts.innerHTML = [
-        renderFact("Repo Root", summary.workspacePath),
-        renderFact("Git State", "Unavailable until monitor API is online"),
-      ].join("");
-    }
-
-    async function refresh() {
-      const summary = await window.widgetBridge.getMonitorSummary();
-      latestSummary = summary;
-      renderCipher(summary.codeCipher || {});
-      if (summary.ok) {
-        renderOnline(summary);
-        renderCorrelation(summary);
-      } else {
-        renderOffline(summary);
-      }
-    }
-
-    refresh();
-    setInterval(refresh, 5000);
-  </script>
+  refresh();
+  setInterval(refresh, 5000);
+</script>
 </body>
 </html>
