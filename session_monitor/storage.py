@@ -1,24 +1,26 @@
 """
 storage.py
 
-Session index (SQLite) + wiring to the EvidenceLog. A session is created
-exactly once per VS Code launch — there is no "is this the same source as
-last time" check anywhere in this file, which is the structural fix for
-the dedup bug in the old browser version (every process start is
-unconditionally a new session).
+SQLite session index plus the append-only EvidenceLog.
+
+A session is an explicit monitor-session boundary. The future VS Code extension
+can supply the authoritative editor session identity; until then the Electron
+control plane starts/ends monitor sessions explicitly.
 """
 
 from __future__ import annotations
 
 import sqlite3
 import uuid
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 from evidence import EvidenceEvent, EvidenceLog, now_iso
 from git_monitor import snapshot as git_snapshot
+
+STORAGE_VERSION = "storage-0.2"
 
 
 @dataclass
@@ -87,39 +89,61 @@ class Storage:
                      repo_root, branch, head, remote, remote_host)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (record.id, record.workspace_path, record.source, record.started_at,
-                 record.ended_at, record.repo_root, record.branch, record.head,
-                 record.remote, record.remote_host),
+                (
+                    record.id,
+                    record.workspace_path,
+                    record.source,
+                    record.started_at,
+                    record.ended_at,
+                    record.repo_root,
+                    record.branch,
+                    record.head,
+                    record.remote,
+                    record.remote_host,
+                ),
             )
             conn.commit()
 
-        self.evidence.append(EvidenceEvent(
-            session_id=record.id,
-            category="session",
-            event_type="session_start",
-            source="storage",
-            source_identifier=workspace_path,
-            evidence_class="observed",
-            parser_version="storage-0.1",
-            data={"source": source, "git": git},
-        ))
+        self.evidence.append(
+            EvidenceEvent(
+                session_id=record.id,
+                category="session",
+                event_type="session_start",
+                source="storage",
+                source_identifier=workspace_path,
+                evidence_class="observed",
+                parser_version=STORAGE_VERSION,
+                data={"source": source, "git": git},
+            )
+        )
         return record
 
     def end_session(self, session_id: str) -> None:
-        ended = now_iso()
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("UPDATE sessions SET ended_at = ? WHERE id = ?", (ended, session_id))
+            conn.row_factory = sqlite3.Row
+            existing = conn.execute(
+                "SELECT ended_at FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if existing is None or existing["ended_at"] is not None:
+                return
+            ended = now_iso()
+            conn.execute(
+                "UPDATE sessions SET ended_at = ? WHERE id = ?", (ended, session_id)
+            )
             conn.commit()
-        self.evidence.append(EvidenceEvent(
-            session_id=session_id,
-            category="session",
-            event_type="session_end",
-            source="storage",
-            source_identifier=session_id,
-            evidence_class="observed",
-            parser_version="storage-0.1",
-            data={},
-        ))
+
+        self.evidence.append(
+            EvidenceEvent(
+                session_id=session_id,
+                category="session",
+                event_type="session_end",
+                source="storage",
+                source_identifier=session_id,
+                evidence_class="observed",
+                parser_version=STORAGE_VERSION,
+                data={},
+            )
+        )
 
     def list_sessions(self, limit: int = 50) -> list[dict]:
         with sqlite3.connect(self.db_path) as conn:
@@ -127,12 +151,14 @@ class Storage:
             rows = conn.execute(
                 "SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?", (limit,)
             ).fetchall()
-            return [dict(r) for r in rows]
+            return [dict(row) for row in rows]
 
     def get_session(self, session_id: str) -> Optional[dict]:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
             if row is None:
                 return None
             record = dict(row)
@@ -140,11 +166,25 @@ class Storage:
             return record
 
     def today_sessions(self) -> list[dict]:
-        today = datetime.now(timezone.utc).date().isoformat()
+        """Sessions that started during the machine's current local calendar day.
+
+        Session timestamps stay UTC in storage; only the reporting boundary is
+        converted from local time to UTC.
+        """
+        local_now = datetime.now().astimezone()
+        local_start = datetime.combine(local_now.date(), time.min, tzinfo=local_now.tzinfo)
+        local_end = local_start + timedelta(days=1)
+        utc_start = local_start.astimezone(timezone.utc).isoformat()
+        utc_end = local_end.astimezone(timezone.utc).isoformat()
+
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM sessions WHERE started_at LIKE ? ORDER BY started_at DESC",
-                (f"{today}%",),
+                """
+                SELECT * FROM sessions
+                WHERE started_at >= ? AND started_at < ?
+                ORDER BY started_at DESC
+                """,
+                (utc_start, utc_end),
             ).fetchall()
-            return [dict(r) for r in rows]
+            return [dict(row) for row in rows]
