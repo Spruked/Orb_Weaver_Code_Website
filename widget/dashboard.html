@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Session Monitor Dashboard</title>
+  <style>
+    :root {
+      --bg: #0b0f12;
+      --panel: #10161b;
+      --border: rgba(84, 214, 185, 0.24);
+      --text: #e8f4f2;
+      --muted: #9eb2af;
+      --accent: #54d6b9;
+      --warn: #f6c453;
+      --danger: #ff6b63;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 24px 0;
+      display: grid;
+      gap: 14px;
+    }
+
+    header,
+    .toolbar,
+    .status,
+    .split-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    header {
+      justify-content: space-between;
+      align-items: end;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 { font-size: 32px; letter-spacing: 0; }
+    h2 { font-size: 15px; letter-spacing: 0; }
+    h3 { font-size: 13px; color: var(--muted); letter-spacing: 0; }
+
+    button {
+      border: 1px solid rgba(84, 214, 185, 0.34);
+      background: rgba(84, 214, 185, 0.12);
+      color: var(--text);
+      border-radius: 6px;
+      min-height: 36px;
+      padding: 0 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover { background: rgba(84, 214, 185, 0.2); }
+
+    input {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid rgba(84, 214, 185, 0.24);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 0 10px;
+      font: inherit;
+    }
+
+    .muted { color: var(--muted); font-size: 13px; }
+    .danger { color: var(--danger); }
+    .warn { color: var(--warn); }
+    .ok { color: var(--accent); }
+
+    .grid-4,
+    .grid-3,
+    .grid-2,
+    .control-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-2 { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); }
+    .control-grid { grid-template-columns: minmax(260px, 1fr) auto; align-items: end; }
+
+    .card {
+      min-width: 0;
+      border: 1px solid var(--border);
+      background: linear-gradient(145deg, rgba(16, 22, 27, 0.98), rgba(11, 15, 18, 0.98));
+      border-radius: 8px;
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .metric {
+      font-size: 36px;
+      line-height: 1;
+      font-weight: 850;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric.warn { color: var(--warn); }
+    .metric.danger { color: var(--danger); }
+
+    .bar {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .bar span {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: #64748b;
+    }
+
+    .dot.ok { background: var(--accent); }
+    .dot.err { background: var(--danger); }
+    .dot.warn { background: var(--warn); }
+
+    .facts,
+    .timeline,
+    .list,
+    .button-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .button-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+    .fact,
+    .timeline-row,
+    .list-row {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(84, 214, 185, 0.09);
+    }
+
+    .fact:last-child,
+    .timeline-row:last-child,
+    .list-row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .timeline-row {
+      grid-template-columns: 165px 130px minmax(0, 1fr);
+      align-items: start;
+    }
+
+    .pill {
+      display: inline-flex;
+      width: fit-content;
+      border: 1px solid rgba(84, 214, 185, 0.24);
+      border-radius: 999px;
+      padding: 2px 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    #actionLog {
+      min-height: 24px;
+    }
+
+    code {
+      color: var(--text);
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 940px) {
+      .grid-4,
+      .grid-3,
+      .grid-2,
+      .control-grid,
+      .button-grid,
+      .timeline-row {
+        grid-template-columns: 1fr;
+      }
+
+      header {
+        align-items: start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Session Monitor Dashboard</h1>
+        <p id="subtitle" class="muted">Runtime evidence and Code Cipher release evidence stay separate.</p>
+      </div>
+      <div class="toolbar">
+        <button id="startBtn">Start Monitor</button>
+        <button id="refreshBtn">Refresh</button>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>Operational Controls</h2>
+      <div class="control-grid">
+        <div>
+          <h3>Workspace</h3>
+          <input id="workspaceInput" />
+        </div>
+        <button id="saveWorkspaceBtn">Save Workspace</button>
+      </div>
+      <div class="button-grid">
+        <button id="createSessionBtn">Start Session</button>
+        <button id="endSessionBtn">End Session</button>
+        <button id="scanVsCodeBtn">Scan VS Code</button>
+        <button id="ingestRolloutBtn">Ingest Codex</button>
+        <button id="scanCodeBtn">Scan Code</button>
+      </div>
+      <code id="actionLog">ready</code>
+    </section>
+
+    <section class="grid-4">
+      <article class="card">
+        <h2>Primary Quota</h2>
+        <div id="primaryMetric" class="metric">--</div>
+        <div class="bar"><span id="primaryBar"></span></div>
+      </article>
+      <article class="card">
+        <h2>Secondary Quota</h2>
+        <div id="secondaryMetric" class="metric">--</div>
+        <div class="bar"><span id="secondaryBar"></span></div>
+      </article>
+      <article class="card">
+        <h2>Monitor API</h2>
+        <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">offline</span></div>
+        <code id="apiBase"></code>
+      </article>
+      <article class="card">
+        <h2>Code Cipher</h2>
+        <div id="cipherStatus" class="metric">--</div>
+        <span id="cipherRelease" class="pill"></span>
+      </article>
+    </section>
+
+    <section class="grid-2">
+      <article class="card">
+        <h2>Evidence Correlation</h2>
+        <div id="correlation" class="list"></div>
+      </article>
+      <article class="card">
+        <h2>Token Economics</h2>
+        <div id="tokens" class="facts"></div>
+      </article>
+    </section>
+
+    <section class="grid-2">
+      <article class="card">
+        <h2>Recent Timeline</h2>
+        <div id="timeline" class="timeline"></div>
+      </article>
+      <article class="card">
+        <h2>Session Monitor Evidence</h2>
+        <div id="sessionFacts" class="facts"></div>
+      </article>
+    </section>
+
+    <section class="grid-3">
+      <article class="card">
+        <h2>Code Cipher Artifact Evidence</h2>
+        <div id="artifacts" class="list"></div>
+      </article>
+      <article class="card">
+        <h2>Workspace Code Scan</h2>
+        <div id="codeScan" class="list"></div>
+      </article>
+      <article class="card">
+        <h2>Reload / IPC Windows</h2>
+        <div id="reloads" class="list"></div>
+      </article>
+    </section>
+
+    <section class="grid-3">
+      <article class="card">
+        <h2>Workspace / Git</h2>
+        <div id="gitFacts" class="facts"></div>
+      </article>
+      <article class="card">
+        <h2>External API Proxy</h2>
+        <div class="facts">
+          <div class="fact"><span class="muted">Mode</span><code>Planned local proxy interceptor</code></div>
+          <div class="fact"><span class="muted">Provider Routes</span><code>/v1/chat/completions, /v1/responses, /v1/messages</code></div>
+          <div class="fact"><span class="muted">Ledger</span><code>Separate API transaction evidence store</code></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="card">
+      <h2>Source Health</h2>
+      <div id="sources" class="list"></div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const subtitle = $("subtitle");
+    const refreshBtn = $("refreshBtn");
+    const startBtn = $("startBtn");
+    const workspaceInput = $("workspaceInput");
+    const saveWorkspaceBtn = $("saveWorkspaceBtn");
+    const createSessionBtn = $("createSessionBtn");
+    const endSessionBtn = $("endSessionBtn");
+    const scanVsCodeBtn = $("scanVsCodeBtn");
+    const ingestRolloutBtn = $("ingestRolloutBtn");
+    const scanCodeBtn = $("scanCodeBtn");
+    const actionLog = $("actionLog");
+    const primaryMetric = $("primaryMetric");
+    const secondaryMetric = $("secondaryMetric");
+    const primaryBar = $("primaryBar");
+    const secondaryBar = $("secondaryBar");
+    const statusDot = $("statusDot");
+    const statusText = $("statusText");
+    const apiBase = $("apiBase");
+    const cipherStatus = $("cipherStatus");
+    const cipherRelease = $("cipherRelease");
+    const correlation = $("correlation");
+    const tokens = $("tokens");
+    const timeline = $("timeline");
+    const sessionFacts = $("sessionFacts");
+    const artifacts = $("artifacts");
+    const codeScan = $("codeScan");
+    const gitFacts = $("gitFacts");
+    const reloads = $("reloads");
+    const sources = $("sources");
+    let latestSummary = null;
+
+    refreshBtn.addEventListener("click", refresh);
+    startBtn.addEventListener("click", async () => {
+      startBtn.disabled = true;
+      startBtn.textContent = "Starting...";
+      await window.widgetBridge.startMonitor();
+      setTimeout(refresh, 1000);
+      setTimeout(() => {
+        startBtn.disabled = false;
+        startBtn.textContent = "Start Monitor";
+      }, 1200);
+    });
+    saveWorkspaceBtn.addEventListener("click", async () => {
+      const result = await window.widgetBridge.setWorkspacePath(workspaceInput.value);
+      actionLog.textContent = result.ok ? "workspace saved" : result.error;
+      refresh();
+    });
+    createSessionBtn.addEventListener("click", async () => {
+      actionLog.textContent = "starting session...";
+      const result = await window.widgetBridge.createSession();
+      actionLog.textContent = result.ok ? `session ${result.session.id} started` : result.error;
+      refresh();
+    });
+    endSessionBtn.addEventListener("click", async () => {
+      const sessionId = activeSessionId();
+      if (!sessionId) {
+        actionLog.textContent = "no active session to end";
+        return;
+      }
+      const result = await window.widgetBridge.endSession(sessionId);
+      actionLog.textContent = result.ok ? `session ${sessionId} ended` : result.error;
+      refresh();
+    });
+    scanVsCodeBtn.addEventListener("click", async () => {
+      const sessionId = activeSessionId();
+      if (!sessionId) {
+        actionLog.textContent = "start a session before scanning VS Code";
+        return;
+      }
+      const result = await window.widgetBridge.scanVsCode(sessionId);
+      const scan = result.result || {};
+      actionLog.textContent = result.ok
+        ? `VS Code scan: ${(scan.new_log_dirs || []).length} dirs, ${(scan.ipc_events || []).length} IPC events`
+        : result.error;
+      refresh();
+    });
+    ingestRolloutBtn.addEventListener("click", async () => {
+      const sessionId = activeSessionId();
+      if (!sessionId) {
+        actionLog.textContent = "start a session before ingesting Codex records";
+        return;
+      }
+      const result = await window.widgetBridge.ingestRollout(sessionId);
+      actionLog.textContent = result.ok ? `Codex ingest: ${result.result.count || 0} records` : result.error;
+      refresh();
+    });
+    scanCodeBtn.addEventListener("click", async () => {
+      const result = await window.widgetBridge.scanWorkspace();
+      actionLog.textContent = result.ok ? `code scan: ${result.scan.fileCount} files` : result.error;
+      refresh();
+    });
+
+    function escapeHtml(value) {
+      return String(value ?? "Unknown").replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[ch]);
+    }
+
+    function clsForPercent(value) {
+      if (value >= 90) return "metric danger";
+      if (value >= 75) return "metric warn";
+      return "metric";
+    }
+
+    function setQuota(metric, bar, raw) {
+      const value = Number(raw);
+      if (!Number.isFinite(value)) {
+        metric.textContent = "--";
+        metric.className = "metric";
+        bar.style.width = "0%";
+        return;
+      }
+      metric.textContent = `${value}%`;
+      metric.className = clsForPercent(value);
+      bar.style.width = `${Math.min(100, Math.max(0, value))}%`;
+    }
+
+    function renderFact(label, value) {
+      return `<div class="fact"><span class="muted">${escapeHtml(label)}</span><code>${escapeHtml(value)}</code></div>`;
+    }
+
+    function renderListRow(title, detail, meta) {
+      return `<div class="list-row"><strong>${escapeHtml(title)}</strong><span class="muted">${escapeHtml(detail)}</span><code>${escapeHtml(meta)}</code></div>`;
+    }
+
+    function activeSessionId() {
+      const session = latestSummary?.today?.sessions?.find((item) => !item.ended_at) || latestSummary?.today?.sessions?.[0];
+      return session?.id || null;
+    }
+
+    function formatTime(value) {
+      if (!value || value === "Unknown") return "Unknown";
+      return new Date(value).toLocaleString();
+    }
+
+    function shortValue(value) {
+      const text = String(value ?? "Unknown");
+      return text.length > 58 ? `${text.slice(0, 24)}...${text.slice(-20)}` : text;
+    }
+
+    function renderCipher(cipher) {
+      cipherStatus.textContent = cipher.verificationResult === "PENDING_REAL_RELEASE_EVIDENCE" ? "Pending" : cipher.verificationResult;
+      cipherStatus.className = cipher.verificationResult === "VERIFIED" ? "metric ok" : "metric warn";
+      cipherRelease.textContent = `${cipher.releaseId} / ${cipher.version}`;
+      artifacts.innerHTML = (cipher.artifacts || []).length
+        ? cipher.artifacts.map((artifact) => renderListRow(artifact.filename, `${artifact.platform} / ${artifact.sku}`, artifact.sha256)).join("")
+        : renderListRow("No artifacts", "Release manifest has no artifact rows", "");
+    }
+
+    function renderCodeScan(scan) {
+      if (!scan) {
+        codeScan.innerHTML = renderListRow("No scan", "Workspace has not been scanned", "");
+        return;
+      }
+      const extensions = (scan.topExtensions || []).map((item) => `${item.extension} ${item.count}`).join(", ");
+      const changed = (scan.changed || []).slice(0, 8).join(" | ");
+      codeScan.innerHTML = [
+        renderListRow("Files", `${scan.fileCount || 0} scanned`, `${Math.round((scan.totalBytes || 0) / 1024)} KB`),
+        renderListRow("Top Types", extensions || "No files", scan.root),
+        renderListRow("Changed Files", changed || "clean or unavailable", `${(scan.changed || []).length} total`),
+        renderListRow("Package Manifests", (scan.manifests || []).join(" | ") || "none", ""),
+        renderListRow("Cipher/Security Files", (scan.protectedFiles || []).slice(0, 6).join(" | ") || "none", `${(scan.protectedFiles || []).length} total`),
+      ].join("");
+    }
+
+    function renderGit(summary) {
+      const git = summary.git || {};
+      const latestSession = (summary.today?.sessions || [])[0];
+      gitFacts.innerHTML = [
+        renderFact("Repo Root", git.repo_root || latestSession?.repo_root),
+        renderFact("Branch", git.branch || latestSession?.branch),
+        renderFact("HEAD", git.head || latestSession?.head),
+        renderFact("Remote", git.remote || latestSession?.remote),
+        renderFact("Remote Host", git.remote_host || latestSession?.remote_host),
+        renderFact("Modified / Untracked / Staged", `${git.modified_files ?? "?"} / ${git.untracked_files ?? "?"} / ${git.staged_files ?? "?"}`),
+        renderFact("Ahead / Behind", `${git.ahead ?? "?"} / ${git.behind ?? "?"}`),
+      ].join("");
+    }
+
+    function renderCorrelation(summary) {
+      const latestSession = (summary.today?.sessions || [])[0];
+      const cipher = summary.codeCipher;
+      const repoName = latestSession?.repo_root?.split(/[\\/]/).filter(Boolean).pop();
+      const cipherRepo = cipher.repository?.split(/[\\/]/).filter(Boolean).pop();
+      const rows = [
+        ["Repository", repoName && cipherRepo ? (repoName === cipherRepo ? "match" : "mismatch") : "unknown", latestSession?.repo_root, cipher.repository],
+        ["Git Commit", latestSession?.head && cipher.gitCommit ? (latestSession.head === cipher.gitCommit ? "match" : "mismatch") : "unknown", latestSession?.head, cipher.gitCommit],
+        ["Source Manifest", "unknown", "monitor source manifest not captured", cipher.sourceManifestHash],
+        ["Release Identity", cipher.releaseId ? "known" : "unknown", latestSession?.id, cipher.releaseId],
+      ];
+      correlation.innerHTML = rows.map(([label, state, monitor, cipherValue]) =>
+        renderListRow(`${label}: ${state}`, `Monitor: ${shortValue(monitor)}`, `Cipher: ${shortValue(cipherValue)}`)
+      ).join("");
+    }
+
+    function renderOnline(summary) {
+      const quota = summary.quota || {};
+      const today = summary.today || {};
+      const data = summary.timeline || {};
+      const tokenSummary = data.token_usage_summary || {};
+      const latestSession = (today.sessions || [])[0];
+      const counts = data.counts || {};
+      workspaceInput.value = summary.workspacePath || "";
+
+      subtitle.textContent = `Updated ${formatTime(summary.observedAt)}`;
+      statusDot.className = "dot ok";
+      statusText.textContent = "online";
+      apiBase.textContent = summary.apiBase || "";
+      setQuota(primaryMetric, primaryBar, quota.primary_used_percent);
+      setQuota(secondaryMetric, secondaryBar, quota.secondary_used_percent);
+
+      sessionFacts.innerHTML = [
+        renderFact("Sessions Today", today.session_count),
+        renderFact("Latest Session", latestSession?.id),
+        renderFact("Workspace", latestSession?.workspace_path),
+        renderFact("Branch / HEAD", latestSession ? `${latestSession.branch || "Unknown"} / ${latestSession.head || "Unknown"}` : null),
+        renderFact("Timeline Events", data.event_count ?? 0),
+        renderFact("Quota Events", counts.quota_update ?? 0),
+        renderFact("Rollout Records", counts.rollout_record ?? 0),
+        renderFact("Reload / IPC Events", (counts.new_log_session_dir ?? 0) + (counts.ipc_event ?? 0)),
+      ].join("");
+
+      tokens.innerHTML = [
+        renderFact("Attributed Turns", tokenSummary.attributed_last_usage_turn_count ?? 0),
+        renderFact("Unattributed Snapshots", tokenSummary.unattributed_last_usage_record_count ?? 0),
+        renderFact("Summed Attributed Total", tokenSummary.summed_last_token_usage?.total_tokens ?? 0),
+        renderFact("Max Cumulative Snapshot", tokenSummary.max_total_tokens ?? 0),
+        renderFact("Cumulative Snapshots", tokenSummary.cumulative_snapshot_count ?? 0),
+      ].join("");
+
+      const rows = (data.timeline || []).slice(-14).reverse();
+      timeline.innerHTML = rows.length
+        ? rows.map((item) => `
+          <div class="timeline-row">
+            <span class="muted">${escapeHtml(formatTime(item.timestamp))}</span>
+            <code>${escapeHtml(item.event_type)}</code>
+            <span>${escapeHtml(item.summary || "")}</span>
+          </div>
+        `).join("")
+        : '<p class="muted">No timeline events yet.</p>';
+
+      reloads.innerHTML = (data.reload_quota_windows || []).length
+        ? data.reload_quota_windows.slice(-6).reverse().map((window) =>
+          renderListRow(
+            window.reload_event?.event_type || "reload",
+            window.reload_event?.summary || "Reload signal",
+            `delta ${window.quota_delta?.primary_used_percent ?? "?"}% / ${window.quota_delta?.secondary_used_percent ?? "?"}%`
+          )
+        ).join("")
+        : renderListRow("No reload windows", "No live reload or IPC reset evidence in the current timeline", "");
+
+      sources.innerHTML = Object.keys(summary.sources || {}).length
+        ? Object.entries(summary.sources).map(([name, record]) =>
+          renderListRow(name, `${record.category} / ${record.evidence_class}`, formatTime(record.last_seen))
+        ).join("")
+        : renderListRow("No sources", "Monitor API is online but no evidence source health exists yet", "");
+      renderCodeScan(summary.workspaceScan);
+      renderGit(summary);
+    }
+
+    function renderOffline(summary) {
+      subtitle.textContent = summary.error || "Monitor API is unreachable";
+      statusDot.className = "dot err";
+      statusText.textContent = "offline";
+      apiBase.textContent = summary.apiBase || "";
+      workspaceInput.value = summary.workspacePath || "";
+      setQuota(primaryMetric, primaryBar, null);
+      setQuota(secondaryMetric, secondaryBar, null);
+      sessionFacts.innerHTML = [
+        renderFact("Monitor", "offline"),
+        renderFact("Action", "Start Monitor, then refresh"),
+        renderFact("API Error", summary.error || "Unknown"),
+      ].join("");
+      tokens.innerHTML = renderFact("Token Evidence", "Unavailable until monitor API is online");
+      correlation.innerHTML = renderListRow("Runtime evidence unavailable", "Code Cipher evidence is still shown separately", "No reconciliation attempted");
+      timeline.innerHTML = '<p class="muted">Start the monitor API to load runtime events.</p>';
+      reloads.innerHTML = renderListRow("No reload windows", "Monitor API offline", "");
+      sources.innerHTML = renderListRow("No source health", "Monitor API offline", "");
+      renderCodeScan(summary.workspaceScan);
+      gitFacts.innerHTML = [
+        renderFact("Repo Root", summary.workspacePath),
+        renderFact("Git State", "Unavailable until monitor API is online"),
+      ].join("");
+    }
+
+    async function refresh() {
+      const summary = await window.widgetBridge.getMonitorSummary();
+      latestSummary = summary;
+      renderCipher(summary.codeCipher || {});
+      if (summary.ok) {
+        renderOnline(summary);
+        renderCorrelation(summary);
+      } else {
+        renderOffline(summary);
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>

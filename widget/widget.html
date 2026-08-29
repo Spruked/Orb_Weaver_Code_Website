@@ -1,14 +1,18 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    html, body {
+    html,
+    body {
+      width: 100%;
+      height: 100%;
       margin: 0;
-      padding: 0;
       background: transparent;
       overflow: hidden;
-      -webkit-app-region: drag; /* whole widget is draggable by default */
+      -webkit-app-region: drag;
       font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
     }
 
@@ -16,110 +20,179 @@
       width: 100%;
       height: 100%;
       box-sizing: border-box;
-      padding: 12px 14px;
-      border-radius: 12px;
-      background: rgba(12, 14, 18, 0.88);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      color: #e8edf5;
-      backdrop-filter: blur(6px);
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      padding: 16px;
+      border-radius: 8px;
+      background: rgba(10, 14, 18, 0.94);
+      border: 1px solid rgba(84, 214, 185, 0.32);
+      color: #e8f4f2;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 12px;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
     }
 
-    .row {
+    .row,
+    .topline {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 12px;
+      gap: 10px;
     }
 
     .title {
-      font-weight: 700;
-      font-size: 12px;
-      letter-spacing: 0.04em;
+      font-weight: 800;
+      font-size: 13px;
+      letter-spacing: 0;
       text-transform: uppercase;
-      color: #94a3b8;
+      color: #9eb2af;
     }
 
     .dot {
-      width: 7px;
-      height: 7px;
+      width: 9px;
+      height: 9px;
       border-radius: 999px;
       background: #64748b;
       -webkit-app-region: no-drag;
     }
-    .dot.ok { background: #00d4aa; }
-    .dot.warn { background: #f59e0b; }
-    .dot.err { background: #ef4444; }
 
-    .metric-row { display: flex; gap: 10px; }
-    .metric {
-      flex: 1;
+    .dot.ok { background: #54d6b9; }
+    .dot.warn { background: #f6c453; }
+    .dot.err { background: #ff6b63; }
+
+    .window-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      -webkit-app-region: no-drag;
+    }
+
+    .icon-btn {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       background: rgba(255, 255, 255, 0.04);
+      color: #9eb2af;
+      border-radius: 6px;
+      font-size: 15px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .icon-btn:hover {
+      color: #e8f4f2;
+      border-color: rgba(84, 214, 185, 0.35);
+      background: rgba(84, 214, 185, 0.12);
+    }
+
+    .icon-btn.danger:hover {
+      color: #fff;
+      border-color: rgba(255, 107, 99, 0.55);
+      background: rgba(255, 107, 99, 0.22);
+    }
+
+    .metric-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .metric {
+      min-width: 0;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.06);
       border-radius: 8px;
-      padding: 6px 8px;
+      padding: 10px;
     }
+
     .metric .label {
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #64748b;
-    }
-    .metric .value {
-      font-size: 17px;
+      font-size: 10px;
       font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      color: #748783;
+    }
+
+    .metric .value {
+      margin-top: 2px;
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 800;
       font-variant-numeric: tabular-nums;
     }
-    .metric .value.warn { color: #f59e0b; }
-    .metric .value.danger { color: #ef4444; }
+
+    .metric .value.warn { color: #f6c453; }
+    .metric .value.danger { color: #ff6b63; }
 
     .bar {
-      height: 4px;
+      height: 6px;
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.08);
       overflow: hidden;
-      margin-top: 4px;
+      margin-top: 9px;
     }
+
     .bar-fill {
       height: 100%;
-      background: #4a9eff;
+      width: 0%;
+      background: #54d6b9;
+      transition: width 160ms ease;
+    }
+
+    #lastUpdated {
+      min-width: 0;
+      color: #748783;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     #openBtn {
       -webkit-app-region: no-drag;
-      background: transparent;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      color: #94a3b8;
-      font-size: 10px;
+      background: rgba(84, 214, 185, 0.12);
+      border: 1px solid rgba(84, 214, 185, 0.34);
+      color: #d9fffa;
+      font-size: 12px;
+      font-weight: 700;
       border-radius: 6px;
-      padding: 3px 6px;
+      padding: 6px 9px;
       cursor: pointer;
     }
-    #openBtn:hover { color: #e8edf5; border-color: rgba(255, 255, 255, 0.3); }
+
+    #openBtn:hover {
+      background: rgba(84, 214, 185, 0.2);
+    }
   </style>
 </head>
 <body>
   <div id="card">
-    <div class="row">
+    <div class="topline">
       <span class="title">Session Monitor</span>
-      <span id="statusDot" class="dot"></span>
+      <div class="window-actions">
+        <span id="statusDot" class="dot" title="Connection status"></span>
+        <button id="hideBtn" class="icon-btn" title="Hide widget" aria-label="Hide widget">-</button>
+        <button id="quitBtn" class="icon-btn danger" title="Quit widget" aria-label="Quit widget">x</button>
+      </div>
     </div>
+
     <div class="metric-row">
       <div class="metric">
         <div class="label">Primary</div>
         <div id="primaryValue" class="value">--</div>
-        <div class="bar"><div id="primaryBar" class="bar-fill" style="width:0%"></div></div>
+        <div class="bar"><div id="primaryBar" class="bar-fill"></div></div>
       </div>
       <div class="metric">
         <div class="label">Secondary</div>
         <div id="secondaryValue" class="value">--</div>
-        <div class="bar"><div id="secondaryBar" class="bar-fill" style="width:0%"></div></div>
+        <div class="bar"><div id="secondaryBar" class="bar-fill"></div></div>
       </div>
     </div>
+
     <div class="row">
-      <span id="lastUpdated" style="color:#64748b;">not connected</span>
+      <span id="lastUpdated">not connected</span>
       <button id="openBtn">Dashboard</button>
     </div>
   </div>
@@ -132,53 +205,64 @@
     const secondaryBar = document.getElementById("secondaryBar");
     const lastUpdated = document.getElementById("lastUpdated");
     const openBtn = document.getElementById("openBtn");
+    const hideBtn = document.getElementById("hideBtn");
+    const quitBtn = document.getElementById("quitBtn");
 
     openBtn.addEventListener("click", () => window.widgetBridge.openDashboard());
+    hideBtn.addEventListener("click", () => window.widgetBridge.hideWidget());
+    quitBtn.addEventListener("click", () => window.widgetBridge.quitApp());
 
     function setBarColor(el, valueEl, pct) {
-      let color = "#4a9eff";
+      let color = "#54d6b9";
       let cls = "";
-      if (pct >= 90) { color = "#ef4444"; cls = "danger"; }
-      else if (pct >= 75) { color = "#f59e0b"; cls = "warn"; }
+      if (pct >= 90) {
+        color = "#ff6b63";
+        cls = "danger";
+      } else if (pct >= 75) {
+        color = "#f6c453";
+        cls = "warn";
+      }
       el.style.background = color;
       valueEl.className = "value " + cls;
     }
 
-    async function poll() {
-      const settings = await window.widgetBridge.getSettings();
-      try {
-        const res = await fetch(`${settings.apiBase}/codex/quota`, { cache: "no-store" });
-        const data = await res.json();
-
-        if (data.status === "unknown") {
-          statusDot.className = "dot warn";
-          primaryValue.textContent = "?";
-          secondaryValue.textContent = "?";
-          lastUpdated.textContent = "quota unavailable";
-          return;
-        }
-
-        const p = Number(data.primary_used_percent);
-        const s = Number(data.secondary_used_percent);
-
-        statusDot.className = "dot ok";
-        primaryValue.textContent = Number.isFinite(p) ? `${p}%` : "?";
-        secondaryValue.textContent = Number.isFinite(s) ? `${s}%` : "?";
-
-        if (Number.isFinite(p)) {
-          primaryBar.style.width = `${Math.min(100, p)}%`;
-          setBarColor(primaryBar, primaryValue, p);
-        }
-        if (Number.isFinite(s)) {
-          secondaryBar.style.width = `${Math.min(100, s)}%`;
-          setBarColor(secondaryBar, secondaryValue, s);
-        }
-
-        lastUpdated.textContent = "updated " + new Date().toLocaleTimeString();
-      } catch (err) {
-        statusDot.className = "dot err";
-        lastUpdated.textContent = "server unreachable";
+    function applyPercent(valueEl, barEl, raw) {
+      const pct = Number(raw);
+      if (!Number.isFinite(pct)) {
+        valueEl.textContent = "?";
+        barEl.style.width = "0%";
+        return;
       }
+      valueEl.textContent = `${pct}%`;
+      barEl.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+      setBarColor(barEl, valueEl, pct);
+    }
+
+    async function poll() {
+      const summary = await window.widgetBridge.getMonitorSummary();
+      if (!summary.ok) {
+        statusDot.className = "dot err";
+        primaryValue.textContent = "--";
+        secondaryValue.textContent = "--";
+        primaryBar.style.width = "0%";
+        secondaryBar.style.width = "0%";
+        lastUpdated.textContent = "server unreachable";
+        return;
+      }
+
+      const quota = summary.quota || {};
+      if (quota.status === "unknown") {
+        statusDot.className = "dot warn";
+        primaryValue.textContent = "?";
+        secondaryValue.textContent = "?";
+        lastUpdated.textContent = "quota unavailable";
+        return;
+      }
+
+      statusDot.className = "dot ok";
+      applyPercent(primaryValue, primaryBar, quota.primary_used_percent);
+      applyPercent(secondaryValue, secondaryBar, quota.secondary_used_percent);
+      lastUpdated.textContent = `updated ${new Date(summary.observedAt).toLocaleTimeString()}`;
     }
 
     async function startPolling() {
