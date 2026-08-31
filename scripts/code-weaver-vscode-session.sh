@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_DIR="/home/bryan/projects/Orb_Weaver_Code_Website"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MONITOR_DIR="$PROJECT_DIR/session_monitor"
 API_BASE="${CODE_WEAVER_MONITOR_API:-http://127.0.0.1:18441}"
-WORKSPACE_PATH="${CODE_WEAVER_WORKSPACE_PATH:-$PROJECT_DIR}"
+WORKSPACE_PATH="${CODE_WEAVER_WORKSPACE_PATH:-${1:-$PWD}}"
 RUNTIME_SESSION_ID=""
 WINDOW_ID=""
 
@@ -41,13 +42,15 @@ start_monitor_if_needed() {
   exit 1
 }
 
-end_session() {
+close_window_record() {
   if [ -n "$WINDOW_ID" ]; then
-    curl -fsS -X POST "$API_BASE/runtime/vscode-windows/$WINDOW_ID/close?reason=vscode_window_closed" >/dev/null 2>&1 || true
+    curl -fsS -X POST \
+      "$API_BASE/runtime/vscode-windows/$WINDOW_ID/close?reason=vscode_window_closed" \
+      >/dev/null 2>&1 || true
   fi
 }
 
-trap end_session EXIT INT TERM
+trap close_window_record EXIT INT TERM
 
 start_monitor_if_needed
 workspace="$(urlencode "$WORKSPACE_PATH")"
@@ -55,11 +58,23 @@ RUNTIME_SESSION_ID="$(
   curl -fsS -X POST "$API_BASE/runtime/session?workspace_path=$workspace" |
     python3 -c 'import json,sys; print(json.load(sys.stdin).get("id", ""))'
 )"
-WINDOW_IDENTITY="$(hostname 2>/dev/null || echo unknown)-$$-$(date +%s)"
+
+if [ -z "$RUNTIME_SESSION_ID" ]; then
+  echo "Code Weaver runtime session was not created." >&2
+  exit 1
+fi
+
+WINDOW_IDENTITY="$(hostname 2>/dev/null || echo unknown)-$$-$(date +%s%N)"
 WINDOW_ID="$(
-  curl -fsS -X POST "$API_BASE/runtime/session/$RUNTIME_SESSION_ID/vscode-windows?workspace_path=$workspace&source=vscode_folder_open&process_id=$$&window_identifier=$WINDOW_IDENTITY&focus_state=unknown" |
+  curl -fsS -X POST \
+    "$API_BASE/runtime/session/$RUNTIME_SESSION_ID/vscode-windows?workspace_path=$workspace&source=vscode_folder_open&process_id=$$&window_identifier=$WINDOW_IDENTITY&focus_state=unknown" |
     python3 -c 'import json,sys; print(json.load(sys.stdin).get("id", ""))'
 )"
+
+if [ -z "$WINDOW_ID" ]; then
+  echo "Code Weaver could not register the VS Code child window." >&2
+  exit 1
+fi
 
 if command -v code >/dev/null 2>&1; then
   code -n --wait "$WORKSPACE_PATH"
