@@ -125,6 +125,8 @@ function createWidgetWindow() {
 
 function createDashboardWindow() {
   if (dashboardWindow) {
+    dashboardWindow.setAlwaysOnTop(true, "floating");
+    dashboardWindow.show();
     dashboardWindow.focus();
     return;
   }
@@ -133,7 +135,7 @@ function createDashboardWindow() {
     height: DASHBOARD_HEIGHT,
     minWidth: 760,
     minHeight: 520,
-    alwaysOnTop: false,
+    alwaysOnTop: true,
     autoHideMenuBar: true,
     backgroundColor: "#0b0f12",
     webPreferences: {
@@ -142,8 +144,11 @@ function createDashboardWindow() {
       nodeIntegration: false,
     },
   });
+  dashboardWindow.setAlwaysOnTop(true, "floating");
   dashboardWindow.setMenuBarVisibility(false);
   dashboardWindow.loadFile(path.join(__dirname, "dashboard.html"));
+  dashboardWindow.on("show", () => dashboardWindow?.setAlwaysOnTop(true, "floating"));
+  dashboardWindow.on("focus", () => dashboardWindow?.setAlwaysOnTop(true, "floating"));
   dashboardWindow.on("closed", () => { dashboardWindow = null; });
 }
 
