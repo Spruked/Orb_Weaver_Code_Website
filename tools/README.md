@@ -20,6 +20,26 @@ Do not use Git submodules for required deployment contents. The actual files mus
 
 The first-party `mcp_server` coordinates the local tools. Chrome DevTools MCP and VisiData are used directly as local tools in unison with it; they are not wrapped in a separate Watcher adapter hierarchy.
 
+## Runtime rule
+
+Required deployed tools are executed only from explicit local paths inside the installed system.
+
+Forbidden during required runtime startup/execution:
+
+- `npx`, whether `@latest`, version-pinned, or expected to be cached
+- `npm install` / `npm ci`
+- `pip install`
+- runtime `git clone`, `git pull`, or submodule fetch
+- registry/package-index/update-server fallback when a local tool is missing
+
+Pinning a package version is provenance control; it is not proof of offline runtime independence.
+
+## Controlled build/release carve-out
+
+Development/release preparation may use networked source and dependency acquisition to build the vendored payload. For example, controlled release preparation may run `git clone`, `npm ci`, or Python dependency resolution.
+
+That permission ends at the release boundary. The produced repository/release/deployment must contain the actual tool files, dependencies/build output, licenses/notices, provenance, and hashes required for offline operation.
+
 ## Chrome DevTools MCP
 
 Source: `ChromeDevTools/chrome-devtools-mcp`
@@ -29,12 +49,12 @@ Pinned source commit is recorded in `TOOLCHAIN_LOCK.json`.
 Release/runtime requirements:
 
 - preserve upstream Apache-2.0 licensing/notices
-- use the local built executable only
+- execute the local built executable by explicit path
 - disable usage statistics
 - disable CrUX lookups
 - disable update checks
 - redact sensitive network headers where supported
-- never use `npx ...@latest` at runtime
+- no `npx` or registry lookup at deployed runtime
 
 ## VisiData
 
