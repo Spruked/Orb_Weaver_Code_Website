@@ -4,68 +4,135 @@
 
 Watcher is the provider-neutral observability and fairness subsystem inside Orb Weaver Code Cipher.
 
-Its job is not to accuse a provider, calculate hidden provider-side accounting, evade limits, or obtain free service. Its job is to preserve enough independently observable evidence for users and providers to determine what happened during an LLM-assisted work session and where reported usage, reliability, context continuity, and delivered work may not line up.
+Its purpose is to preserve enough independently observable evidence for users and providers to determine what happened during an LLM-assisted work session and where reported usage, reliability, context continuity, and delivered work may not line up.
+
+Watcher is not a limit-evasion system, refund engine, or accusation engine.
 
 Core doctrine:
 
-> Watcher reports what was observed, what was derived from observations, what was inferred, and what was unavailable. It never promotes inference into fact.
+> Watcher reports what was OBSERVED, what was DERIVED from observations, what was INFERRED, and what was UNAVAILABLE. It never promotes inference into fact.
 
-Codex is Provider Adapter #1. The core evidence model must remain provider-neutral so the same system can monitor API clients, IDE assistants, local inference servers, and future LLM providers.
+## Local-tool rule
+
+Watcher does not use provider-adapter or observer-adapter layers for first-party system tooling.
+
+The product toolchain lives inside the repository and ships with the product. The first-party MCP server coordinates the local tools directly.
+
+Canonical repository layout:
+
+```text
+tools/
+  mcp_server/                 # first-party system MCP server
+  chrome-devtools-mcp/        # vendored official Chrome DevTools MCP source/build
+  visidata/                   # vendored VisiData source/runtime
+  TOOLCHAIN_LOCK.json         # pinned upstream provenance
+```
+
+The same local tool layout is required in both:
+
+- `Spruked/Orb_Weaver_Code_Website`
+- `Spruked/Orb_Weaver`
+
+Chrome DevTools MCP and VisiData are system tools, not optional cloud integrations. They are used in unison with the first-party MCP server.
+
+### No-cloud runtime rule
+
+After installation/deployment, core operation must not require:
+
+- npm or another package registry
+- PyPI or another Python package index
+- GitHub or another source host
+- a hosted MCP server
+- CrUX
+- tool usage telemetry endpoints
+- automatic upstream update checks
+- a package download performed at process startup
+
+Forbidden runtime patterns include `npx ...@latest`, runtime `git clone`, runtime `pip install`, and equivalent network acquisition.
+
+Source acquisition and dependency resolution happen during controlled development/release preparation. The resulting release/deployment bundle contains the local tool code, required runtime dependencies/build output, licenses, provenance, and hashes.
+
+Do not use Git submodules for required deployed tools: an archive/download must contain the actual tool files without a second fetch. A vendored snapshot or Git subtree is preferred.
+
+## Local toolchain
+
+### First-party MCP server
+
+The first-party MCP server is the local coordination layer. Chrome DevTools MCP, VisiData, and subsequent system tools sit beside it under `tools/` and are invoked locally through that system MCP/tool layer.
+
+Watcher records the resulting evidence. It does not need a second abstraction layer that merely renames those tools as adapters.
+
+### Chrome DevTools MCP
+
+Use the official `ChromeDevTools/chrome-devtools-mcp` source as a pinned in-repository tool.
+
+Required runtime policy:
+
+- local executable/build only
+- no `@latest`
+- usage statistics disabled
+- CrUX disabled
+- update checks disabled
+- sensitive network-header redaction enabled where supported
+- connect only to explicitly authorized local Chrome targets
+- preserve upstream Apache-2.0 license/notices
+
+Watcher may use Chrome DevTools evidence for network timing/status, console/runtime faults, page/target lifecycle, reloads, navigation, and performance behavior.
+
+Chrome evidence does not establish hidden provider accounting or authoritative LLM context state unless the provider explicitly exposes those facts through the observed channel.
+
+### VisiData
+
+VisiData is a pinned in-repository local analysis tool used to inspect Watcher/Orb Weaver evidence and structured exports.
+
+VisiData is GPL-3.0 software. Keep the upstream source and license intact in its vendored directory and deployment. Treat it as a separate local program/tool invoked by the system rather than copying GPL implementation code into proprietary first-party modules without a separate licensing review.
 
 ## Evidence classes
 
-- `observed` — directly emitted by a provider, IDE, runtime, OS, log, API response, or process.
-- `derived` — deterministic calculation over observed records.
-- `inferred` — a defensible interpretation of multiple observed signals.
-- `manual` — user-entered annotation.
-- `unavailable` — a field that the monitored provider/runtime does not expose.
+- `OBSERVED` — directly emitted by a provider, IDE, runtime, OS, browser/DevTools channel, log, API response, or process.
+- `DERIVED` — deterministic calculation over observed records.
+- `INFERRED` — a defensible interpretation of multiple observed signals.
+- `MANUAL` — user-entered annotation.
+- `UNAVAILABLE` — the monitored source does not expose the field.
 
-Existing append-only evidence remains authoritative. New Watcher views are read-only correlations over that evidence unless an adapter is explicitly performing an observation action.
+The append-only evidence ledger remains authoritative. Unknown data stays unknown.
 
-## Universal hierarchy
+## Universal evidence chain
 
-Every observation should be normalizable into this hierarchy where the source exposes the identifiers:
+Where identifiers are observable, evidence should be correlatable through:
 
 `provider -> connection -> app/IDE session -> conversation/thread -> invocation -> actions -> response -> usage -> context events -> result`
 
-No adapter is required to populate fields the provider does not expose.
-
-Watcher has two orthogonal adapter families:
-
-1. **Provider adapters** describe the LLM/provider connection, request, response, usage, model, quota, and rate-limit evidence.
-2. **Observer adapters** independently observe the surrounding environment such as VS Code, Chrome/DevTools, the OS, network/runtime telemetry, or a local inference host.
-
-Observer evidence must never be silently treated as provider evidence. Correlation joins the streams only after both have been preserved with their own provenance.
+The chain is a normalized evidence model, not an adapter requirement.
 
 ## Required session measurements
 
 ### App / IDE presence
 
-Watcher should distinguish these concepts rather than combining them:
+Track separately where observable:
 
-- app session opened
-- app session ended
+- application/editor session start and end
 - elapsed app-open time
-- app reload/restart intervals
-- foreground/focused time when an authoritative source is available
-- idle time when an authoritative source is available
-- workspace/repository/branch/HEAD at observation boundaries
+- foreground/focused time
+- idle time
+- reload/restart intervals
+- workspace/repository/branch/HEAD
 
-A timestamped VS Code log directory remains a fallback/inferred editor lifecycle signal. A future VS Code extension should provide authoritative editor lifecycle and focus events.
+A timestamped VS Code log directory can remain an inferred fallback lifecycle signal. An in-system VS Code/MCP tool should provide authoritative lifecycle/focus evidence when available.
 
 ### LLM invocation accounting
 
-For every invocation or turn where observable:
+For every invocation/turn where observable:
 
 - provider and model
 - connection/request ID
 - conversation/thread ID
-- turn/invocation ID
+- invocation/turn ID
 - request start
 - first response/token time
 - completion time
 - wall-clock duration
-- completion result: completed / failed / cancelled / timed-out / disconnected / limited / unknown
+- result: completed / failed / cancelled / timed-out / disconnected / limited / unknown
 - completed-return count
 - failure count
 - retry count
@@ -74,7 +141,7 @@ For every invocation or turn where observable:
 
 ### Actions and results
 
-Record metadata about measurable actions without copying private prompts, responses, or source code into the ledger by default:
+Record measurable action metadata without copying private prompts, responses, credentials, or source payloads into the ledger by default:
 
 - action/tool type
 - action start/end
@@ -82,9 +149,9 @@ Record metadata about measurable actions without copying private prompts, respon
 - result status
 - exit/error code where available
 - affected file/repository identifiers where appropriate
-- whether an action repeats substantially equivalent discovery already observed in the same continuity segment
+- repeated/redundant discovery or context-reconstruction actions
 
-### Usage and accounting
+### Usage/accounting
 
 Capture provider-reported values exactly as observed:
 
@@ -95,50 +162,47 @@ Capture provider-reported values exactly as observed:
 - reasoning tokens
 - total tokens
 - context-window size
-- provider quota/usage percentages
+- provider usage/quota percentages
 - rate-limit window size
 - reset timestamp
-- request start
+- usage-request start
 - response status
-- request ID
+- provider request ID
 - request duration
 - source filename/API identifier
 - source line/record number
 - source-record SHA-256
 
-Watcher must preserve quota snapshots even when window/reset metadata is unavailable, but the UI must clearly state that the window metadata was not observed.
+Quota snapshots remain valid observations even when window/reset metadata is unavailable; the UI must say `UNAVAILABLE` rather than infer the missing window.
 
-### Context continuity
+## Context continuity
 
-Watcher should detect and report context continuity episodes using layered evidence:
-
-Observed signals can include:
+Observed continuity-break signals may include:
 
 - provider/IDE connection reset
 - disconnect/reconnect
 - app-server spawn/start/exit
 - editor reload/restart
-- explicit provider context reset/compaction events
-- changed thread/conversation identifiers
+- explicit context reset/compaction event
+- changed thread/conversation ID
 - incomplete invocation followed by a new continuity segment
 
-Inferred reconstruction signals can include:
+Inferred reconstruction signals may include:
 
-- repeated reads of files already read before an interruption
-- repeated repository scans/searches
-- repeated Git/state discovery
-- repeated tool sequences
-- repeated retrieval of substantially equivalent working context
+- rereading previously read files
+- repeating repository scans/searches
+- repeating Git/state discovery
+- repeating tool sequences
+- rebuilding substantially equivalent working context
 
-Watcher should report:
+Report:
 
 - continuity state
 - interruption timestamp
 - first reconstruction action
 - context re-established timestamp when inferable
 - recovery duration
-- recovery invocations
-- recovery actions
+- recovery invocations/actions
 - recovery token usage when attributable
 - recovery overhead as a fraction of observed LLM-active time
 
@@ -151,11 +215,11 @@ Allowed classifications:
 - `CONTEXT_REESTABLISHED`
 - `UNKNOWN`
 
-Correlation is not causation. A quota change near a continuity break is reported as a temporal relationship, not automatically attributed to the break.
+Correlation is not causation.
 
 ## Multi-clock timestamp contract
 
-Every significant Watcher event should be displayable in:
+Every significant event must be displayable in:
 
 - local standard time with UTC offset/time-zone abbreviation where available
 - UTC ISO-8601
@@ -164,56 +228,11 @@ Every significant Watcher event should be displayable in:
 - Julian Date (JD)
 - Modified Julian Date (MJD)
 
-UTC ISO-8601 remains the canonical stored event timestamp. Alternate representations are deterministic derived views.
-
-## Provider adapters
-
-Adapters should expose a common interface and capabilities declaration. Examples:
-
-- Codex / VS Code
-- OpenAI API
-- Anthropic API
-- Gemini API
-- Grok API
-- Ollama
-- llama.cpp
-- Qwen/local inference runtimes
-- other IDE extensions
-
-An adapter must explicitly declare unavailable measurements rather than fabricating substitutes.
-
-## Observer adapters
-
-Observer adapters collect evidence independently from the provider adapter. Examples include:
-
-- VS Code lifecycle/focus observer
-- Chrome DevTools browser observer
-- operating-system process/resource observer
-- local inference host observer
-- network/runtime observer where authorized
-
-### Chrome DevTools MCP observer
-
-The official `ChromeDevTools/chrome-devtools-mcp` project is the preferred first browser observation adapter. It exposes Chrome DevTools capabilities through MCP, including network requests, console messages, page/target state, screenshots, performance traces, navigation, and browser debugging.
-
-Watcher does not vendor Chrome DevTools MCP and does not treat it as an LLM provider. It is an optional independent observer feeding evidence into the Watcher ledger.
-
-Privacy/sovereignty defaults for Watcher use:
-
-- disable Chrome DevTools MCP usage-statistics collection
-- disable CrUX performance lookups unless explicitly enabled
-- request network-header redaction
-- prefer connection to an explicitly selected local debuggable Chrome instance
-- do not persist cookies, browser storage values, authorization headers, raw request/response bodies, page text, or screenshots by default
-- persist only the metadata necessary to substantiate timing, status, invocation/action correlation, and runtime faults
-
-The official server exposes flags for these controls, including `--no-usage-statistics`, `--no-performance-crux`, `--redact-network-headers`, and `--browser-url`.
-
-Browser evidence may establish network timing, HTTP status, console/runtime errors, navigation, reloads, and performance behavior. It does **not** establish hidden provider accounting or authoritative LLM context state unless the provider explicitly exposes those facts through the observed browser/runtime channel.
+UTC ISO-8601 is the canonical stored timestamp; the other clocks are deterministic derived views.
 
 ## Source validation
 
-Every provider-specific usage display should have a validator that can show the evidence chain behind the displayed value.
+Every provider-specific usage display must expose its evidence chain.
 
 For Codex Stats this includes, when present:
 
@@ -222,11 +241,11 @@ For Codex Stats this includes, when present:
 3. HTTP status
 4. request ID
 5. response duration
-6. parsed quota values
+6. parsed usage values
 7. source log path
-8. source line
+8. source line/record
 9. source-record hash
-10. freshness relative to the current monitor session
+10. freshness relative to the monitored session
 
 Suggested UI states:
 
@@ -238,62 +257,69 @@ Suggested UI states:
 
 ## Service-quality / fairness report
 
-A report should present three separate columns of fact:
+Reports keep three fact domains separate:
 
-1. **Provider accounting** — what the provider reported as usage, quota, limits, tokens, and cost.
-2. **Observed activity** — invocations, actions, timing, errors, resets, context reconstruction, and IDE/runtime state.
+1. **Provider accounting** — provider-reported usage, quota, limits, tokens, and cost.
+2. **Observed activity** — invocations, actions, timing, errors, resets, context reconstruction, IDE/browser/runtime state.
 3. **Delivered utility** — completed returns and successfully completed measurable work.
 
-A report may state that the observed relationship warrants investigation. It must not claim access to hidden provider-side accounting logic.
+A report may state that an observed relationship warrants investigation. It must never claim access to hidden provider accounting logic.
 
-## Delivery stages
+## Control-plane organization
 
-### Stage 1 — Foundation
-
-- provider-neutral Watcher contract
-- multi-clock timebase utilities
-- provider adapter base class
-- observer adapter base class
-- context-continuity correlation primitives
-- dashboard always-on-top
-
-### Stage 2 — Codex evidence hardening
-
-- Codex usage source validator in the control plane
-- session-boundary freshness validation
-- correct distinction between quota saturation and observed `usage_limit_exceeded` events
-- invocation/return/failure/retry counters
-- context-continuity panel
-- VS Code elapsed-session view
-- Chrome DevTools MCP observer profile with privacy-hardened defaults
-
-### Stage 3 — Control-plane navigation
-
-Preserve the existing visual language while reorganizing the dashboard into navigable sections:
+Preserve the current visual language while organizing the always-on-top dashboard into persistent navigation sections:
 
 - Overview
 - Session
 - Usage
 - Context
 - Evidence
+- Tools
 - Code Cipher
 - Settings
 
-The navigation should be persistent/sticky and should not hide evidence detail.
+The **Tools** section must show the actual local tool state, including the first-party MCP server, Chrome DevTools MCP, VisiData, local paths, pinned versions/commits, process state, and last successful evidence/action time. A documentation file existing in the repo is not evidence that a tool is running.
 
-### Stage 4 — Generic API monitoring
+## Delivery stages
 
-- local proxy/SDK instrumentation interface
-- OpenAI-compatible adapter first
-- provider request/response metadata capture
-- cost/token/rate-limit adapters where exposed
+### Stage 1 — Foundation
 
-### Stage 5 — IDE, browser, and local-model observers/adapters
+- evidence doctrine
+- multi-clock timebase
+- context-continuity correlation primitives
+- dashboard always-on-top
+- local toolchain doctrine and lock file
 
-- authoritative VS Code extension lifecycle/focus events
-- Chrome DevTools MCP runtime integration and browser evidence ingestion
-- Anthropic/Gemini/Grok integrations as observable APIs permit
-- Ollama/llama.cpp/local-runtime metrics
+### Stage 2 — Vendor and prove local tools
+
+- place first-party MCP server under `tools/mcp_server/`
+- vendor pinned Chrome DevTools MCP under `tools/chrome-devtools-mcp/`
+- vendor pinned VisiData under `tools/visidata/`
+- build/package all required runtime dependencies locally
+- remove runtime registry/update/telemetry dependencies
+- expose tool health/provenance in the control panel
+
+### Stage 3 — Codex evidence hardening
+
+- Codex usage source validator
+- session-boundary freshness validation
+- quota saturation vs explicit usage-limit event distinction
+- invocation/return/failure/retry counters
+- context-continuity panel
+- VS Code elapsed/focus session view
+
+### Stage 4 — Control-plane navigation
+
+- persistent section navigation
+- source drill-down
+- tool status
+- evidence validation controls
+
+### Stage 5 — General LLM/API observation
+
+- observe any authorized LLM/API connection through the common MCP/local tool system
+- preserve provider-specific fields without fabricating absent values
+- local model/runtime metrics for Ollama, llama.cpp, Qwen, and other local runtimes
 - CPU/GPU/RAM/VRAM telemetry where locally available
 
 ### Stage 6 — Exportable evidence report
@@ -301,6 +327,6 @@ The navigation should be persistent/sticky and should not hide evidence detail.
 - reproducible session summary
 - raw evidence references and hashes
 - continuity/recovery timeline
-- provider usage versus delivered work correlation
+- provider usage versus delivered-work correlation
 - multi-clock timestamps
 - machine-readable JSON plus human-readable report
