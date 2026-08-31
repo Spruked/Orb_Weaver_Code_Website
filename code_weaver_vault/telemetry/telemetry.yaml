@@ -1,0 +1,7 @@
+metrics:
+  endpoints: ["/metrics"]  # Prometheus-compatible
+  intervals: 10s
+alerts:
+  high_drift: { threshold: 0.7, action: "notify" }  # e.g., glyph anomaly
+traces:
+  format: "json"  # Include glyphs + memory states

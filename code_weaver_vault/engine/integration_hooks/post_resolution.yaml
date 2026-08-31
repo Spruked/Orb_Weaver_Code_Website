@@ -1,0 +1,3 @@
+post_resolution:
+  log_to_matrix: true
+  log_to_telemetry: true

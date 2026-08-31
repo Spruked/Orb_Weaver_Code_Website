@@ -1,0 +1,40 @@
+Folder PATH listing for volume SSDDrive Win19 64
+Volume serial number is 2A00-D9FE
+C:.
++---config
+|   \---environments
++---docs
++---engine
+|   \---integration_hooks
++---examples
++---glyphs
+|   +---examples
+|   \---_template
++---interfaces
+|   +---api
+|   |   \---examples
+|   +---cli
+|   \---ui
+|       \---mockups
++---memory
+|   +---domains
+|   \---_template
++---scripts
++---telemetry
+|   +---dashboard
+|   \---traces
++---tests
+|   +---integration
+|   \---unit
+\---vaults
+    +---business_rules
+    +---custom
+    +---ethical_frameworks
+    +---game_logic
+    +---heuristic_patterns
+    +---memory_archives
+    +---philosophical
+    +---security_policies
+    \---_template
+        +---rules
+        \---tests

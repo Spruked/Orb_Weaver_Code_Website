@@ -7,6 +7,7 @@ set -e  # Exit on any error
 
 PROJECT_DIR="/home/bryan/projects/Orb_Weaver_Code_Website"
 SERVICE_NAME="orb-weaver-code"
+MONITOR_SERVICE_NAME="code-weaver-session-monitor"
 
 echo "========================================="
 echo "Orb Weaver Code Website - Deployment"
@@ -43,6 +44,9 @@ echo ""
 # Restart service
 echo "🔄 Restarting service..."
 sudo systemctl restart "$SERVICE_NAME.service"
+if systemctl list-unit-files | grep -q "^$MONITOR_SERVICE_NAME.service"; then
+    sudo systemctl restart "$MONITOR_SERVICE_NAME.service"
+fi
 echo ""
 
 # Wait a moment for service to start
@@ -68,6 +72,7 @@ echo "Site URL: https://codeweaver.certsig.com"
 echo ""
 echo "Useful commands:"
 echo "  View logs:    sudo journalctl -u $SERVICE_NAME.service -f"
+echo "                sudo journalctl -u $MONITOR_SERVICE_NAME.service -f"
 echo "  Restart:      sudo systemctl restart $SERVICE_NAME.service"
 echo "  Stop:         sudo systemctl stop $SERVICE_NAME.service"
 echo "  Status:       sudo systemctl status $SERVICE_NAME.service"

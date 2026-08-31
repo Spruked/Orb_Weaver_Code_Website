@@ -1,0 +1,5 @@
+{
+  "decision_escalate": { "symbol": "⚠️", "meaning": "High-risk vault trigger", "color": "#ff6b6b" },
+  "memory_recall": { "symbol": "🧠", "meaning": "Matrix query hit", "color": "#4ecdc4" },
+  "drift_detected": { "symbol": "∞", "meaning": "Recursive conceptual drift", "color": "#ffe66d" }
+}

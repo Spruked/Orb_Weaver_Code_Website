@@ -8,6 +8,13 @@ only through explicit session/observation/ingestion actions.
 
 Endpoints:
     GET  /health
+    GET  /runtime/session
+    POST /runtime/session
+    POST /runtime/session/{session_id}/heartbeat
+    POST /runtime/session/{session_id}/recover-stale
+    POST /runtime/session/{session_id}/vscode-windows
+    GET  /runtime/session/{session_id}/vscode-windows
+    POST /runtime/vscode-windows/{window_id}/close
     POST /sessions
     POST /sessions/{id}/end
     GET  /sessions
@@ -25,6 +32,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -37,10 +45,15 @@ import codex
 import correlation
 import vscode_logs
 
-DATA_DIR = Path.home() / ".local" / "share" / "personal-session-monitor"
+DATA_DIR = Path(
+    os.environ.get(
+        "CODE_WEAVER_RUNTIME_DATA_DIR",
+        Path.home() / ".local" / "share" / "code-weaver-runtime",
+    )
+)
 
 storage = Storage(DATA_DIR)
-app = FastAPI(title="Personal Session Monitor API")
+app = FastAPI(title="Code Weaver Runtime API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -70,9 +83,70 @@ def _session_or_none(session_id: str):
 def health():
     return {
         "ok": True,
-        "service": "personal-session-monitor",
+        "service": "code-weaver-runtime",
         "data_dir": str(DATA_DIR),
     }
+
+
+@app.get("/runtime/session")
+def runtime_session():
+    session = storage.active_runtime_session()
+    return session or {"status": "none"}
+
+
+@app.post("/runtime/session")
+def ensure_runtime_session(workspace_path: str):
+    record = storage.ensure_runtime_session(workspace_path)
+    # Existing VS Code log directories are baseline state, not reload events.
+    vscode_logs.baseline_session_dirs(DATA_DIR)
+    # Capture one real provider observation at the runtime boundary.
+    codex.read_current_quota(storage.evidence, record["id"])
+    return record
+
+
+@app.post("/runtime/session/{session_id}/heartbeat")
+def runtime_heartbeat(session_id: str, source: str = "runtime-api"):
+    heartbeat = storage.heartbeat(session_id, source)
+    return heartbeat or {"error": "not found"}
+
+
+@app.post("/runtime/recover-stale")
+def recover_stale_runtime_sessions(reason: str = "runtime_startup_recovery"):
+    return {"closed": storage.close_stale_sessions(reason, runtime_only=True)}
+
+
+@app.post("/runtime/session/{session_id}/vscode-windows")
+def start_vscode_window(
+    session_id: str,
+    workspace_path: str,
+    source: str = "vscode_launcher",
+    process_id: Optional[str] = None,
+    window_identifier: Optional[str] = None,
+    focus_state: str = "unknown",
+):
+    window = storage.create_vscode_window(
+        session_id,
+        workspace_path,
+        source,
+        process_id=process_id,
+        window_identifier=window_identifier,
+        focus_state=focus_state,
+    )
+    return window or {"error": "not found"}
+
+
+@app.get("/runtime/session/{session_id}/vscode-windows")
+def list_vscode_windows(session_id: str, active_only: bool = False):
+    if _session_or_none(session_id) is None:
+        return {"error": "not found"}
+    windows = storage.list_vscode_windows(session_id, active_only=active_only)
+    return {"windows": windows, "count": len(windows)}
+
+
+@app.post("/runtime/vscode-windows/{window_id}/close")
+def close_vscode_window(window_id: str, reason: str = "window_closed"):
+    window = storage.close_vscode_window(window_id, reason)
+    return window or {"error": "not found"}
 
 
 @app.post("/sessions")
@@ -96,6 +170,11 @@ def end_session(session_id: str):
 @app.get("/sessions")
 def list_sessions(limit: int = 50):
     return storage.list_sessions(limit)
+
+
+@app.get("/sessions/active")
+def active_session():
+    return storage.active_session() or {"status": "none"}
 
 
 @app.get("/sessions/{session_id}")

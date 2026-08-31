@@ -31,6 +31,7 @@ Private implementation/release components may still live outside this repository
 - local FastAPI monitor service on `127.0.0.1:18441`
 - SQLite session index
 - append-only JSONL evidence ledger
+- Code Weaver Vault mirror in `code_weaver_vault/runtime`
 - Git/workspace snapshots
 - Codex Stats.log quota ingestion
 - Codex rollout JSONL ingestion
@@ -179,8 +180,24 @@ For manual steps see [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 
 ```bash
 sudo systemctl status orb-weaver-code.service
+sudo systemctl status code-weaver-session-monitor.service
 sudo journalctl -u orb-weaver-code.service -f
+sudo journalctl -u code-weaver-session-monitor.service -f
 sudo systemctl restart orb-weaver-code.service
+```
+
+Fresh VS Code session window:
+
+```bash
+scripts/code-weaver-vscode-session.sh
+```
+
+Optional user-service install:
+
+```bash
+scripts/install-code-weaver-user-services.sh
+systemctl --user status code-weaver-widget.service
+systemctl --user status code-weaver-vscode-session.service
 ```
 
 ## Website API Routes

@@ -1,0 +1,19 @@
+[Unit]
+Description=Code Weaver Session Monitor API
+After=network.target
+
+[Service]
+Type=simple
+User=bryan
+WorkingDirectory=/home/bryan/projects/Orb_Weaver_Code_Website/session_monitor
+Environment="CODE_WEAVER_VAULT_PATH=/home/bryan/projects/Orb_Weaver_Code_Website/code_weaver_vault"
+Environment="CODE_WEAVER_RUNTIME_DATA_DIR=/home/bryan/.local/share/code-weaver-runtime"
+ExecStart=/usr/bin/python3 /home/bryan/projects/Orb_Weaver_Code_Website/session_monitor/server.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=code-weaver-session-monitor
+
+[Install]
+WantedBy=multi-user.target

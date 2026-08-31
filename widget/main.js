@@ -16,9 +16,15 @@ const MONITOR_DIR = path.resolve(__dirname, "..", "session_monitor");
 const RELEASE_MANIFEST_PATH = path.resolve(__dirname, "..", "lib", "release-manifest.ts");
 const EVIDENCE_COLLECTION_INTERVAL_MS = 15000;
 const WORKSPACE_SCAN_CACHE_MS = 30000;
+const TOPMOST_ENFORCE_INTERVAL_MS = 2000;
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
 
 function loadSettings() {
   const defaults = {
@@ -56,9 +62,31 @@ let tray = null;
 let monitorProcess = null;
 let monitorStderr = "";
 let collectorTimer = null;
+let topmostTimer = null;
 let settings = loadSettings();
 let workspaceScanCache = null;
 let workspaceScanCachedAt = 0;
+let widgetSessionId = null;
+let quitSaveStarted = false;
+
+function enforceWindowTopmost(window, level) {
+  if (!window || window.isDestroyed()) return;
+  window.setAlwaysOnTop(true, level);
+  if (process.platform === "darwin") {
+    window.moveTop();
+  }
+}
+
+function enforceTopmostWindows() {
+  enforceWindowTopmost(widgetWindow, "screen-saver");
+  enforceWindowTopmost(dashboardWindow, "floating");
+}
+
+function startTopmostEnforcer() {
+  if (topmostTimer) clearInterval(topmostTimer);
+  enforceTopmostWindows();
+  topmostTimer = setInterval(enforceTopmostWindows, TOPMOST_ENFORCE_INTERVAL_MS);
+}
 
 function defaultCornerBounds() {
   const { workAreaSize } = screen.getPrimaryDisplay();
@@ -104,15 +132,19 @@ function createWidgetWindow() {
     },
   });
 
-  widgetWindow.setAlwaysOnTop(true, "screen-saver");
+  enforceWindowTopmost(widgetWindow, "screen-saver");
   widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   widgetWindow.setMenuBarVisibility(false);
   widgetWindow.loadFile(path.join(__dirname, "widget.html"));
 
-  widgetWindow.on("show", () => widgetWindow?.setAlwaysOnTop(true, "screen-saver"));
-  widgetWindow.on("focus", () => widgetWindow?.setAlwaysOnTop(true, "screen-saver"));
+  widgetWindow.on("ready-to-show", () => enforceWindowTopmost(widgetWindow, "screen-saver"));
+  widgetWindow.on("show", () => enforceWindowTopmost(widgetWindow, "screen-saver"));
+  widgetWindow.on("focus", () => enforceWindowTopmost(widgetWindow, "screen-saver"));
+  widgetWindow.on("blur", () => enforceWindowTopmost(widgetWindow, "screen-saver"));
+  widgetWindow.on("restore", () => enforceWindowTopmost(widgetWindow, "screen-saver"));
   widgetWindow.on("move", () => {
     if (!widgetWindow) return;
+    enforceWindowTopmost(widgetWindow, "screen-saver");
     const [x, y] = widgetWindow.getPosition();
     const [width, height] = widgetWindow.getSize();
     settings = saveSettings({ widgetBounds: { x, y, width, height } });
@@ -125,7 +157,7 @@ function createWidgetWindow() {
 
 function createDashboardWindow() {
   if (dashboardWindow) {
-    dashboardWindow.setAlwaysOnTop(true, "floating");
+    enforceWindowTopmost(dashboardWindow, "floating");
     dashboardWindow.show();
     dashboardWindow.focus();
     return;
@@ -144,11 +176,14 @@ function createDashboardWindow() {
       nodeIntegration: false,
     },
   });
-  dashboardWindow.setAlwaysOnTop(true, "floating");
+  enforceWindowTopmost(dashboardWindow, "floating");
   dashboardWindow.setMenuBarVisibility(false);
   dashboardWindow.loadFile(path.join(__dirname, "dashboard.html"));
-  dashboardWindow.on("show", () => dashboardWindow?.setAlwaysOnTop(true, "floating"));
-  dashboardWindow.on("focus", () => dashboardWindow?.setAlwaysOnTop(true, "floating"));
+  dashboardWindow.on("ready-to-show", () => enforceWindowTopmost(dashboardWindow, "floating"));
+  dashboardWindow.on("show", () => enforceWindowTopmost(dashboardWindow, "floating"));
+  dashboardWindow.on("focus", () => enforceWindowTopmost(dashboardWindow, "floating"));
+  dashboardWindow.on("blur", () => enforceWindowTopmost(dashboardWindow, "floating"));
+  dashboardWindow.on("restore", () => enforceWindowTopmost(dashboardWindow, "floating"));
   dashboardWindow.on("closed", () => { dashboardWindow = null; });
 }
 
@@ -363,6 +398,8 @@ async function startMonitorServer() {
   monitorStderr = "";
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
+  env.CODE_WEAVER_RUNTIME_DATA_DIR = path.join(app.getPath("home"), ".local", "share", "code-weaver-runtime");
+  env.CODE_WEAVER_VAULT_PATH = path.resolve(__dirname, "..", "code_weaver_vault");
   monitorProcess = spawn("python3", ["server.py"], {
     cwd: MONITOR_DIR,
     env,
@@ -389,10 +426,31 @@ async function startMonitorServer() {
   };
 }
 
-async function createMonitorSession() {
+async function createMonitorSession(source = "electron-dashboard") {
   try {
     const workspacePath = encodeURIComponent(settings.workspacePath);
-    const session = await postJson(`/sessions?workspace_path=${workspacePath}&source=electron-dashboard`);
+    const session = await postJson(`/sessions?workspace_path=${workspacePath}&source=${encodeURIComponent(source)}`);
+    return { ok: true, session };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function recoverStaleRuntimeSessions() {
+  try {
+    return {
+      ok: true,
+      result: await postJson("/runtime/recover-stale?reason=widget_startup_recovery"),
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function ensureRuntimeSession() {
+  try {
+    const workspacePath = encodeURIComponent(settings.workspacePath);
+    const session = await postJson(`/runtime/session?workspace_path=${workspacePath}`);
     return { ok: true, session };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -433,20 +491,16 @@ async function ingestRollout(sessionId) {
 
 async function activeSession() {
   try {
-    const today = await readJson("/today");
-    return (today.sessions || []).find((session) => !session.ended_at) || null;
+    const session = await readJson("/runtime/session");
+    return session?.id ? session : null;
   } catch {
     return null;
   }
 }
 
-async function collectActiveSessionEvidence() {
-  if (!(await monitorHealth())) return { ok: false, status: "offline" };
-  const session = await activeSession();
-  if (!session) return { ok: true, status: "no-active-session" };
-
-  const sessionId = session.id;
-  const [quota, rollout, vscode] = await Promise.allSettled([
+async function collectSessionEvidence(sessionId) {
+  const [heartbeat, quota, rollout, vscode] = await Promise.allSettled([
+    postJson(`/runtime/session/${encodeURIComponent(sessionId)}/heartbeat?source=electron-widget`),
     observeQuota(sessionId),
     ingestRollout(sessionId),
     scanVsCode(sessionId),
@@ -455,16 +509,46 @@ async function collectActiveSessionEvidence() {
     ok: true,
     status: "collected",
     sessionId,
+    heartbeat: heartbeat.status === "fulfilled" ? heartbeat.value : { ok: false },
     quota: quota.status === "fulfilled" ? quota.value : { ok: false },
     rollout: rollout.status === "fulfilled" ? rollout.value : { ok: false },
     vscode: vscode.status === "fulfilled" ? vscode.value : { ok: false },
   };
 }
 
+async function collectActiveSessionEvidence() {
+  if (!(await monitorHealth())) return { ok: false, status: "offline" };
+  const session = await activeSession();
+  if (!session) return { ok: true, status: "no-active-session" };
+
+  return collectSessionEvidence(session.id);
+}
+
 function startEvidenceCollector() {
   if (collectorTimer) clearInterval(collectorTimer);
   collectActiveSessionEvidence();
   collectorTimer = setInterval(collectActiveSessionEvidence, EVIDENCE_COLLECTION_INTERVAL_MS);
+}
+
+async function resetSessionOnOpen() {
+  await recoverStaleRuntimeSessions();
+  const created = await ensureRuntimeSession();
+  if (created.ok && created.session?.id) {
+    widgetSessionId = created.session.id;
+    await collectSessionEvidence(widgetSessionId);
+  }
+  return created;
+}
+
+async function saveSessionOnClose() {
+  if (!(await monitorHealth())) return;
+  const sessionId = widgetSessionId || (await activeSession())?.id;
+  if (!sessionId) return;
+  await collectSessionEvidence(sessionId);
+  await endMonitorSession(sessionId);
+  if (widgetSessionId === sessionId) {
+    widgetSessionId = null;
+  }
 }
 
 async function getMonitorSummary() {
@@ -534,12 +618,30 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   createTray();
   createWidgetWindow();
+  startTopmostEnforcer();
   await startMonitorServer();
+  await resetSessionOnOpen();
   startEvidenceCollector();
 });
 
-app.on("before-quit", () => {
+app.on("second-instance", () => {
+  if (widgetWindow) {
+    widgetWindow.show();
+    enforceWindowTopmost(widgetWindow, "screen-saver");
+    widgetWindow.focus();
+  }
+});
+
+app.on("before-quit", (event) => {
+  if (!quitSaveStarted) {
+    quitSaveStarted = true;
+    event.preventDefault();
+    void saveSessionOnClose().finally(() => app.quit());
+    return;
+  }
+
   if (collectorTimer) clearInterval(collectorTimer);
+  if (topmostTimer) clearInterval(topmostTimer);
   if (monitorProcess && !monitorProcess.killed) {
     monitorProcess.kill();
   }

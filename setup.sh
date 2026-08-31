@@ -8,6 +8,7 @@ set -e  # Exit on any error
 PROJECT_DIR="/home/bryan/projects/Orb_Weaver_Code_Website"
 DOMAIN="codeweaver.certsig.com"
 SERVICE_NAME="orb-weaver-code"
+MONITOR_SERVICE_NAME="code-weaver-session-monitor"
 
 echo "========================================="
 echo "Orb Weaver Code Website - Initial Setup"
@@ -45,6 +46,15 @@ else
     sudo cp orb-weaver-code.service /etc/systemd/system/
     sudo systemctl daemon-reload
 fi
+echo ""
+
+# Setup Session Monitor systemd service
+echo "Setting up Session Monitor systemd service..."
+sudo cp systemd/"$MONITOR_SERVICE_NAME.service" /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable "$MONITOR_SERVICE_NAME.service"
+sudo systemctl restart "$MONITOR_SERVICE_NAME.service"
+echo "Session Monitor service installed, enabled, and started"
 echo ""
 
 # Start the service
@@ -170,4 +180,5 @@ echo "   ./deploy.sh"
 echo ""
 echo "5. View logs:"
 echo "   sudo journalctl -u $SERVICE_NAME.service -f"
+echo "   sudo journalctl -u $MONITOR_SERVICE_NAME.service -f"
 echo ""

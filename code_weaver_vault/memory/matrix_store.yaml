@@ -1,0 +1,8 @@
+matrices:
+  default:
+    type: "key-value"  # or "vector" for embeddings
+    size: [1000, 512]  # Rows x dimensions
+    ttl: 3600s         # Auto-expire (short-term)
+    consolidation:     # Inspired by sleep replay
+      schedule: "daily"
+      method: "replay_and_hash"

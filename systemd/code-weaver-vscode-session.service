@@ -1,0 +1,14 @@
+[Unit]
+Description=Code Weaver VS Code Fresh Window Session
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/bryan/projects/Orb_Weaver_Code_Website
+ExecStart=/home/bryan/projects/Orb_Weaver_Code_Website/scripts/code-weaver-vscode-session.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

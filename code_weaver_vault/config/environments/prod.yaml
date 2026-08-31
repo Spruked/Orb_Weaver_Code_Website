@@ -1,0 +1,5 @@
+# Production Environment
+debug: false
+memory_ttl: 3600s
+telemetry_interval: 60s
+security: enabled

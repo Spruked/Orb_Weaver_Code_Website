@@ -1,0 +1,5 @@
+{
+  "input": "recursive query",
+  "expected_glyphs": ["∞"],
+  "drift_score": 0.8
+}

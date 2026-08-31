@@ -1,0 +1,14 @@
+{
+  "name": "TemplateVault",
+  "id": "template-001",
+  "version": "0.1.0",
+  "type": "template",
+  "priority": 2,
+  "author": "Your Name",
+  "description": "Copy this folder to create a new vault",
+  "tags": ["template", "starter"],
+  "enabled": true,
+  "applies_to": ["all"],
+  "glyph_tags": ["decision_point", "⚠️"],
+  "memory_key": "template_matrix"
+}

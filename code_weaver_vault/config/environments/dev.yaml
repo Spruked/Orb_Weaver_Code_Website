@@ -1,0 +1,5 @@
+# Development Environment
+debug: true
+glyph_debug: true
+memory_ttl: 300s
+telemetry_interval: 5s

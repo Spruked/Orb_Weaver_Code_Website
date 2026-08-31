@@ -1,0 +1,5 @@
+{
+  "input": "ethical dilemma",
+  "expected_glyphs": ["⚠️"],
+  "memory_involved": true
+}

@@ -1,0 +1,19 @@
+system:
+  name: "Generic Vault Logic System"
+  version: "1.0.0"
+
+resolution:
+  strategy: "priority"  # priority | vote | consensus
+  default_action: "ignore"
+
+vaults:
+  paths:
+    - "vaults/**"
+  enabled_by_default: true
+
+glyphs:
+  thresholds:
+    drift_score: 0.5
+
+memory:
+  ttl: 3600s

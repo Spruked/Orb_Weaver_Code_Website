@@ -1,0 +1,15 @@
+[Unit]
+Description=Code Weaver Always-On-Top Desktop Widget
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/bryan/projects/Orb_Weaver_Code_Website/widget
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+Environment="CODE_WEAVER_VAULT_PATH=/home/bryan/projects/Orb_Weaver_Code_Website/code_weaver_vault"
+
+[Install]
+WantedBy=default.target

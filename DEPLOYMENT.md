@@ -52,18 +52,31 @@
 ```bash
 # Start service
 sudo systemctl start orb-weaver-code.service
+sudo systemctl start code-weaver-session-monitor.service
 
 # Stop service
 sudo systemctl stop orb-weaver-code.service
+sudo systemctl stop code-weaver-session-monitor.service
 
 # Restart service
 sudo systemctl restart orb-weaver-code.service
+sudo systemctl restart code-weaver-session-monitor.service
 
 # View logs
 sudo journalctl -u orb-weaver-code.service -f
+sudo journalctl -u code-weaver-session-monitor.service -f
 
 # Check if enabled on boot
 sudo systemctl is-enabled orb-weaver-code.service
+sudo systemctl is-enabled code-weaver-session-monitor.service
+```
+
+The monitor service mirrors session evidence into `code_weaver_vault/runtime` for repo-local storage and retrieval. For the persistent always-on-top widget and a fresh VS Code window with session start/end capture, install the user services:
+
+```bash
+scripts/install-code-weaver-user-services.sh
+systemctl --user status code-weaver-widget.service
+systemctl --user status code-weaver-vscode-session.service
 ```
 
 ## Option 2: PM2 (Alternative)

@@ -19,6 +19,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+try:
+    import vault_bridge
+except Exception:  # pragma: no cover - evidence logging must outlive vault issues.
+    vault_bridge = None
+
 EVIDENCE_CLASSES = ("observed", "inferred", "manual")
 
 
@@ -61,12 +66,15 @@ class EvidenceLog:
         self.combined_path = self.data_dir / "all_events.jsonl"
 
     def append(self, event: EvidenceEvent) -> None:
-        line = json.dumps(event.to_dict())
+        event_dict = event.to_dict()
+        line = json.dumps(event_dict)
         session_path = self.events_dir / f"{event.session_id}.jsonl"
         with open(session_path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
         with open(self.combined_path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
+        if vault_bridge is not None:
+            vault_bridge.record_event(event_dict)
 
     def read_session(self, session_id: str) -> list[dict]:
         path = self.events_dir / f"{session_id}.jsonl"

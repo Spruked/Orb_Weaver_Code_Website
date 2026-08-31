@@ -1,0 +1,5 @@
+{
+  "test": "vault_template",
+  "input": {"query": "test"},
+  "expected": {"action": "approve"}
+}

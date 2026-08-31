@@ -1,0 +1,4 @@
+# Test Environment
+debug: false
+memory_ttl: 1800s
+telemetry_interval: 30s
