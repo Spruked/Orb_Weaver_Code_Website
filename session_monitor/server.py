@@ -1,33 +1,10 @@
 """
 server.py
 
-Local HTTP API for the Session Monitor control plane.
+Local HTTP API for the Code Weaver Session Monitor control plane.
 
 Read endpoints are side-effect free. Evidence enters the append-only ledger
 only through explicit session/observation/ingestion actions.
-
-Endpoints:
-    GET  /health
-    GET  /runtime/session
-    POST /runtime/session
-    POST /runtime/session/{session_id}/heartbeat
-    POST /runtime/session/{session_id}/recover-stale
-    POST /runtime/session/{session_id}/vscode-windows
-    GET  /runtime/session/{session_id}/vscode-windows
-    POST /runtime/vscode-windows/{window_id}/close
-    POST /sessions
-    POST /sessions/{id}/end
-    GET  /sessions
-    GET  /sessions/{id}
-    GET  /today
-    GET  /codex/quota
-    POST /codex/quota/observe/{session_id}
-    GET  /codex/rollout?session_id=<id>
-    POST /codex/rollout/ingest/{session_id}
-    GET  /git/{session_id}
-    GET  /evidence/sources
-    GET  /timeline
-    POST /vscode/scan/{session_id}
 """
 
 from __future__ import annotations
@@ -43,6 +20,7 @@ from storage import Storage
 from git_monitor import snapshot as git_snapshot
 import codex
 import correlation
+import release_evidence
 import vscode_logs
 
 DATA_DIR = Path(
@@ -62,14 +40,41 @@ app.add_middleware(
 )
 
 
+def _number(value):
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _remaining_from_used(value):
+    used = _number(value)
+    return 100.0 - used if used is not None else None
+
+
 def _latest_quota() -> dict:
     latest = storage.evidence.latest_by("codex", "quota_update")
     if latest is None:
         return {"status": "unknown"}
     normalized = latest.get("data", {}).get("normalized", {})
+    five_hour_used = _number(normalized.get("primary_used_percent"))
+    weekly_used = _number(normalized.get("secondary_used_percent"))
     return {
         "status": "observed",
         **normalized,
+        "scope": "shared_plan_limits",
+        "five_hour": {
+            "used_percent": five_hour_used,
+            "remaining_percent_derived": _remaining_from_used(five_hour_used),
+            "remaining_evidence_class": "derived",
+            "raw_source_field": "primaryUsedPercent",
+        },
+        "weekly": {
+            "used_percent": weekly_used,
+            "remaining_percent_derived": _remaining_from_used(weekly_used),
+            "remaining_evidence_class": "derived",
+            "raw_source_field": "secondaryUsedPercent",
+        },
         "observed_via": latest.get("source_identifier"),
         "evidence_timestamp": latest.get("timestamp"),
     }
@@ -85,6 +90,8 @@ def health():
         "ok": True,
         "service": "code-weaver-runtime",
         "data_dir": str(DATA_DIR),
+        "vault_mirror": "degraded" if storage.evidence.last_vault_error else "ok",
+        "vault_error": storage.evidence.last_vault_error,
     }
 
 
@@ -97,9 +104,7 @@ def runtime_session():
 @app.post("/runtime/session")
 def ensure_runtime_session(workspace_path: str):
     record = storage.ensure_runtime_session(workspace_path)
-    # Existing VS Code log directories are baseline state, not reload events.
     vscode_logs.baseline_session_dirs(DATA_DIR)
-    # Capture one real provider observation at the runtime boundary.
     codex.read_current_quota(storage.evidence, record["id"])
     return record
 
@@ -152,9 +157,7 @@ def close_vscode_window(window_id: str, reason: str = "window_closed"):
 @app.post("/sessions")
 def start_session(workspace_path: str, source: str = "manual"):
     record = storage.create_session(workspace_path, source)
-    # Existing VS Code log directories are baseline state, not reload events.
     vscode_logs.baseline_session_dirs(DATA_DIR)
-    # Capture one real provider observation at the session boundary.
     codex.read_current_quota(storage.evidence, record.id)
     return record.to_dict()
 
@@ -185,7 +188,6 @@ def get_session(session_id: str):
 
 @app.get("/today")
 def today():
-    # Read-only: dashboard refreshes must never create evidence.
     sessions = storage.today_sessions()
     return {
         "sessions": sessions,
@@ -196,7 +198,6 @@ def today():
 
 @app.get("/codex/quota")
 def quota():
-    # Read-only view of the latest persisted provider observation.
     return _latest_quota()
 
 
@@ -211,7 +212,6 @@ def observe_quota(session_id: str):
 
 @app.get("/codex/rollout")
 def rollout(session_id: str):
-    # Read-only view. Ingestion is a POST operation below.
     session = _session_or_none(session_id)
     if session is None:
         return {"error": "not found"}
@@ -247,6 +247,12 @@ def git_state(session_id: str):
     return git_snapshot(Path(record["workspace_path"]))
 
 
+@app.get("/release/evidence")
+def verified_release_evidence():
+    """Read-only verification of the most recent explicitly sealed release file."""
+    return release_evidence.read_verified_release_evidence()
+
+
 @app.get("/evidence/sources")
 def source_health():
     sources = {}
@@ -258,6 +264,14 @@ def source_health():
                 "evidence_class": record["evidence_class"],
                 "category": record["category"],
             }
+    if storage.evidence.last_vault_error:
+        sources["code_weaver_vault"] = {
+            "last_seen": None,
+            "evidence_class": "unavailable",
+            "category": "storage",
+            "status": "degraded",
+            "error": storage.evidence.last_vault_error,
+        }
     return sources
 
 
@@ -266,7 +280,7 @@ def timeline(session_id: Optional[str] = None, limit: int = 200):
     if session_id is not None:
         events = storage.evidence.read_session(session_id)
     else:
-        events = list(reversed(storage.evidence.tail_all(limit=limit)))
+        events = list(reversed(storage.evidence.tail_all(limit=max(limit, 2000))))
     return correlation.build_timeline(events, limit=limit)
 
 
