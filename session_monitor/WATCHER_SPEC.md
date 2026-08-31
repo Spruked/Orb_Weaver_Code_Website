@@ -10,34 +10,60 @@ Watcher is not a limit-evasion system, refund engine, or accusation engine.
 
 Core doctrine:
 
-> Watcher reports what was OBSERVED, what was DERIVED from observations, what was INFERRED, and what was UNAVAILABLE. It never promotes inference into fact.
+> Watcher reports what was OBSERVED, what was DERIVED from observations, what was INFERRED, what is PLANNED, and what was UNAVAILABLE. It never promotes inference, configuration, documentation, or intent into runtime fact.
+
+## Evidence and implementation-state language
+
+Watcher documentation and UI must distinguish evidence class from implementation state.
+
+Evidence classes:
+
+- `OBSERVED` — directly emitted by a provider, IDE, runtime, OS, browser/DevTools channel, log, API response, filesystem inspection, repository inspection, or process.
+- `DERIVED` — deterministic calculation over observed records.
+- `INFERRED` — a defensible interpretation of multiple observed signals.
+- `MANUAL` — user-entered annotation.
+- `UNAVAILABLE` — the monitored source does not expose the field.
+
+Implementation states:
+
+- `PROVEN_RUNNING` — execution has been directly observed and the evidence source is identified.
+- `PRESENT_NOT_PROVEN` — code/configuration/files exist, but successful runtime execution has not been observed.
+- `PLANNED_REQUIRED` — required architecture that is not yet implemented or not yet proven.
+- `ABSENT` — direct repository/runtime inspection shows the required component is not present.
+- `UNKNOWN` — evidence is insufficient.
+
+A configuration key, architecture diagram, README statement, lock-file entry, or planned path is not proof that a component runs.
+
+Architecture diagrams must label planned flow as `PLANNED` or `REQUIRED`. Present-tense arrows are reserved for flows with direct runtime evidence.
 
 ## Local-tool rule
 
-Watcher does not use provider-adapter or observer-adapter layers for first-party system tooling.
+The system does not require a Watcher adapter hierarchy around first-party system tools.
 
-The product toolchain lives inside the repository and ships with the product. The first-party MCP server coordinates the local tools directly.
+The required product toolchain lives inside each product repository and ships inside the downloadable/deployed system. The first-party MCP server is the local coordination layer and uses the other local tools in unison.
 
-Canonical repository layout:
+Required repository topology:
 
 ```text
 tools/
   mcp_server/                 # first-party system MCP server
-  chrome-devtools-mcp/        # vendored official Chrome DevTools MCP source/build
+  chrome-devtools-mcp/        # vendored official Chrome DevTools MCP source/build/runtime
   visidata/                   # vendored VisiData source/runtime
-  TOOLCHAIN_LOCK.json         # pinned upstream provenance
+  TOOLCHAIN_LOCK.json         # pinned upstream provenance, hashes and policy
 ```
 
-The same local tool layout is required in both:
+This topology is required in both:
 
 - `Spruked/Orb_Weaver_Code_Website`
 - `Spruked/Orb_Weaver`
 
-Chrome DevTools MCP and VisiData are system tools, not optional cloud integrations. They are used in unison with the first-party MCP server.
+Chrome DevTools MCP and VisiData are local system tools, not optional cloud integrations and not Watcher observer adapters.
 
-### No-cloud runtime rule
+## No-cloud runtime rule
 
-After installation/deployment, core operation must not require:
+After installation/deployment, core operation must not require network acquisition of tools or dependencies.
+
+Core runtime must not require:
 
 - npm or another package registry
 - PyPI or another Python package index
@@ -46,56 +72,85 @@ After installation/deployment, core operation must not require:
 - CrUX
 - tool usage telemetry endpoints
 - automatic upstream update checks
-- a package download performed at process startup
+- package downloads at process startup
 
-Forbidden runtime patterns include `npx ...@latest`, runtime `git clone`, runtime `pip install`, and equivalent network acquisition.
+### Runtime prohibition
 
-Source acquisition and dependency resolution happen during controlled development/release preparation. The resulting release/deployment bundle contains the local tool code, required runtime dependencies/build output, licenses, provenance, and hashes.
+Required production/deployed tools must be started from explicit local paths inside the installed system.
 
-Do not use Git submodules for required deployed tools: an archive/download must contain the actual tool files without a second fetch. A vendored snapshot or Git subtree is preferred.
+Forbidden for required runtime execution:
+
+- `npx`, whether the package is `@latest`, version-pinned, or expected to be cached
+- runtime `npm install` or `npm ci`
+- runtime `pip install`
+- runtime `git clone`, `git pull`, submodule fetch, or equivalent source acquisition
+- any fallback that silently reaches a package registry when a local executable is missing
+
+Pinning a version does not satisfy the no-cloud runtime rule by itself. A pinned package still violates the rule if runtime startup can consult a registry or download missing content.
+
+### Deliberate build/release carve-out
+
+Controlled development and release preparation may use networked package/source acquisition to obtain and verify upstream source and resolve dependencies.
+
+Examples permitted during controlled release preparation:
+
+- `git clone` or an equivalent source fetch used to create/update a vendored snapshot
+- `npm ci` / `npm install` used to construct the pinned local Chrome DevTools MCP build/runtime payload
+- Python package resolution used to construct a pinned local VisiData runtime when required
+
+Those operations are build/release activities, not product runtime behavior.
+
+The produced repository/release/deployment bundle must contain the actual source/tool files, required runtime dependencies, build output, licenses/notices, provenance, and hashes. Production startup must succeed with network access disabled.
+
+Do not use Git submodules for required deployed tools because an archive/download must contain the actual tool files without a second fetch. Prefer a vendored snapshot or Git subtree.
 
 ## Local toolchain
 
 ### First-party MCP server
 
-The first-party MCP server is the local coordination layer. Chrome DevTools MCP, VisiData, and subsequent system tools sit beside it under `tools/` and are invoked locally through that system MCP/tool layer.
+The first-party MCP server is the system's local coordination layer.
 
-Watcher records the resulting evidence. It does not need a second abstraction layer that merely renames those tools as adapters.
+Required location:
+
+`tools/mcp_server/`
+
+Chrome DevTools MCP, VisiData, and subsequent system tools sit beside it under `tools/` and are invoked locally through the same MCP/tool system.
+
+Watcher records evidence produced by that system. It does not need a second abstraction layer whose only purpose is to rename those tools as adapters.
 
 ### Chrome DevTools MCP
 
-Use the official `ChromeDevTools/chrome-devtools-mcp` source as a pinned in-repository tool.
+Required location:
 
-Required runtime policy:
+`tools/chrome-devtools-mcp/`
 
-- local executable/build only
-- no `@latest`
+Use a pinned vendored snapshot of the official `ChromeDevTools/chrome-devtools-mcp` project.
+
+Required production policy:
+
+- execute the local vendored/built binary by explicit path
+- no `npx` in production/deployed startup
+- no registry lookup or install fallback
 - usage statistics disabled
 - CrUX disabled
-- update checks disabled
+- automatic update checks disabled
 - sensitive network-header redaction enabled where supported
 - connect only to explicitly authorized local Chrome targets
 - preserve upstream Apache-2.0 license/notices
 
-Watcher may use Chrome DevTools evidence for network timing/status, console/runtime faults, page/target lifecycle, reloads, navigation, and performance behavior.
+Chrome DevTools evidence may establish network timing/status, console/runtime faults, page/target lifecycle, reloads, navigation, and performance behavior.
 
 Chrome evidence does not establish hidden provider accounting or authoritative LLM context state unless the provider explicitly exposes those facts through the observed channel.
 
 ### VisiData
 
-VisiData is a pinned in-repository local analysis tool used to inspect Watcher/Orb Weaver evidence and structured exports.
+Required location:
 
-VisiData is GPL-3.0 software. Keep the upstream source and license intact in its vendored directory and deployment. Treat it as a separate local program/tool invoked by the system rather than copying GPL implementation code into proprietary first-party modules without a separate licensing review.
+`tools/visidata/`
 
-## Evidence classes
+Use a pinned vendored VisiData source/runtime for local evidence and structured-data inspection.
 
-- `OBSERVED` — directly emitted by a provider, IDE, runtime, OS, browser/DevTools channel, log, API response, or process.
-- `DERIVED` — deterministic calculation over observed records.
-- `INFERRED` — a defensible interpretation of multiple observed signals.
-- `MANUAL` — user-entered annotation.
-- `UNAVAILABLE` — the monitored source does not expose the field.
-
-The append-only evidence ledger remains authoritative. Unknown data stays unknown.
+VisiData is GPL-3.0 software. Keep the complete upstream source and license intact in its vendored directory and deployment. Treat it as a separate local program/tool invoked by the first-party system rather than copying GPL implementation code into proprietary first-party modules without a separate licensing review.
 
 ## Universal evidence chain
 
@@ -104,6 +159,8 @@ Where identifiers are observable, evidence should be correlatable through:
 `provider -> connection -> app/IDE session -> conversation/thread -> invocation -> actions -> response -> usage -> context events -> result`
 
 The chain is a normalized evidence model, not an adapter requirement.
+
+Provider/runtime-specific parsers or collectors may exist where necessary to read a source, but their existence does not create a second system-tool architecture and does not grant authority to invent unavailable fields.
 
 ## Required session measurements
 
@@ -278,9 +335,13 @@ Preserve the current visual language while organizing the always-on-top dashboar
 - Code Cipher
 - Settings
 
-The **Tools** section must show the actual local tool state, including the first-party MCP server, Chrome DevTools MCP, VisiData, local paths, pinned versions/commits, process state, and last successful evidence/action time. A documentation file existing in the repo is not evidence that a tool is running.
+The **Tools** section must show actual local tool state, including the first-party MCP server, Chrome DevTools MCP, VisiData, local paths, pinned versions/commits, process state, and last successful evidence/action time.
+
+A documentation file, configuration key, expected executable name, or lock-file entry must never be displayed as proof that the tool is installed or running.
 
 ## Delivery stages
+
+Delivery-stage bullets are requirements/plans unless explicitly marked `PROVEN_RUNNING` with evidence.
 
 ### Stage 1 — Foundation
 
@@ -292,11 +353,13 @@ The **Tools** section must show the actual local tool state, including the first
 
 ### Stage 2 — Vendor and prove local tools
 
-- place first-party MCP server under `tools/mcp_server/`
+- place the first-party MCP server under `tools/mcp_server/`
 - vendor pinned Chrome DevTools MCP under `tools/chrome-devtools-mcp/`
 - vendor pinned VisiData under `tools/visidata/`
 - build/package all required runtime dependencies locally
 - remove runtime registry/update/telemetry dependencies
+- execute each required tool from explicit local paths
+- prove offline startup with network access disabled
 - expose tool health/provenance in the control panel
 
 ### Stage 3 — Codex evidence hardening
@@ -317,7 +380,7 @@ The **Tools** section must show the actual local tool state, including the first
 
 ### Stage 5 — General LLM/API observation
 
-- observe any authorized LLM/API connection through the common MCP/local tool system
+- observe authorized LLM/API connections through the common MCP/local tool system and source-specific collectors where required
 - preserve provider-specific fields without fabricating absent values
 - local model/runtime metrics for Ollama, llama.cpp, Qwen, and other local runtimes
 - CPU/GPU/RAM/VRAM telemetry where locally available
