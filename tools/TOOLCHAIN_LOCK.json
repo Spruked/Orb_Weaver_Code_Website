@@ -1,0 +1,44 @@
+{
+  "schema": "spruked-local-toolchain-v1",
+  "runtime_network_dependency_allowed": false,
+  "required_tools": [
+    {
+      "id": "mcp_server",
+      "kind": "first_party",
+      "path": "tools/mcp_server",
+      "source": "in-repository",
+      "status": "REQUIRED_LOCAL_CONTENT"
+    },
+    {
+      "id": "chrome-devtools-mcp",
+      "kind": "vendored_upstream",
+      "path": "tools/chrome-devtools-mcp",
+      "source_repository": "https://github.com/ChromeDevTools/chrome-devtools-mcp.git",
+      "source_ref": "fd67970881624f231ff84129a1234bb04c762be7",
+      "upstream_version": "1.8.0",
+      "license": "Apache-2.0",
+      "runtime_policy": {
+        "usage_statistics": false,
+        "performance_crux": false,
+        "update_checks": false,
+        "redact_network_headers": true,
+        "registry_lookup": false
+      },
+      "status": "PINNED_PENDING_VENDOR_COPY"
+    },
+    {
+      "id": "visidata",
+      "kind": "vendored_upstream",
+      "path": "tools/visidata",
+      "source_repository": "https://github.com/saulpw/visidata.git",
+      "source_ref": "1d8a6fcd7f031a140c5662943af868e9108343ed",
+      "source_branch_at_pin": "develop",
+      "license": "GPL-3.0",
+      "runtime_policy": {
+        "package_index_lookup": false,
+        "automatic_update": false
+      },
+      "status": "PINNED_PENDING_VENDOR_COPY"
+    }
+  ]
+}
