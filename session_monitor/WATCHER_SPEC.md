@@ -30,6 +30,13 @@ Every observation should be normalizable into this hierarchy where the source ex
 
 No adapter is required to populate fields the provider does not expose.
 
+Watcher has two orthogonal adapter families:
+
+1. **Provider adapters** describe the LLM/provider connection, request, response, usage, model, quota, and rate-limit evidence.
+2. **Observer adapters** independently observe the surrounding environment such as VS Code, Chrome/DevTools, the OS, network/runtime telemetry, or a local inference host.
+
+Observer evidence must never be silently treated as provider evidence. Correlation joins the streams only after both have been preserved with their own provenance.
+
 ## Required session measurements
 
 ### App / IDE presence
@@ -175,6 +182,35 @@ Adapters should expose a common interface and capabilities declaration. Examples
 
 An adapter must explicitly declare unavailable measurements rather than fabricating substitutes.
 
+## Observer adapters
+
+Observer adapters collect evidence independently from the provider adapter. Examples include:
+
+- VS Code lifecycle/focus observer
+- Chrome DevTools browser observer
+- operating-system process/resource observer
+- local inference host observer
+- network/runtime observer where authorized
+
+### Chrome DevTools MCP observer
+
+The official `ChromeDevTools/chrome-devtools-mcp` project is the preferred first browser observation adapter. It exposes Chrome DevTools capabilities through MCP, including network requests, console messages, page/target state, screenshots, performance traces, navigation, and browser debugging.
+
+Watcher does not vendor Chrome DevTools MCP and does not treat it as an LLM provider. It is an optional independent observer feeding evidence into the Watcher ledger.
+
+Privacy/sovereignty defaults for Watcher use:
+
+- disable Chrome DevTools MCP usage-statistics collection
+- disable CrUX performance lookups unless explicitly enabled
+- request network-header redaction
+- prefer connection to an explicitly selected local debuggable Chrome instance
+- do not persist cookies, browser storage values, authorization headers, raw request/response bodies, page text, or screenshots by default
+- persist only the metadata necessary to substantiate timing, status, invocation/action correlation, and runtime faults
+
+The official server exposes flags for these controls, including `--no-usage-statistics`, `--no-performance-crux`, `--redact-network-headers`, and `--browser-url`.
+
+Browser evidence may establish network timing, HTTP status, console/runtime errors, navigation, reloads, and performance behavior. It does **not** establish hidden provider accounting or authoritative LLM context state unless the provider explicitly exposes those facts through the observed browser/runtime channel.
+
 ## Source validation
 
 Every provider-specific usage display should have a validator that can show the evidence chain behind the displayed value.
@@ -217,6 +253,7 @@ A report may state that the observed relationship warrants investigation. It mus
 - provider-neutral Watcher contract
 - multi-clock timebase utilities
 - provider adapter base class
+- observer adapter base class
 - context-continuity correlation primitives
 - dashboard always-on-top
 
@@ -228,6 +265,7 @@ A report may state that the observed relationship warrants investigation. It mus
 - invocation/return/failure/retry counters
 - context-continuity panel
 - VS Code elapsed-session view
+- Chrome DevTools MCP observer profile with privacy-hardened defaults
 
 ### Stage 3 — Control-plane navigation
 
@@ -250,9 +288,10 @@ The navigation should be persistent/sticky and should not hide evidence detail.
 - provider request/response metadata capture
 - cost/token/rate-limit adapters where exposed
 
-### Stage 5 — IDE and local-model adapters
+### Stage 5 — IDE, browser, and local-model observers/adapters
 
 - authoritative VS Code extension lifecycle/focus events
+- Chrome DevTools MCP runtime integration and browser evidence ingestion
 - Anthropic/Gemini/Grok integrations as observable APIs permit
 - Ollama/llama.cpp/local-runtime metrics
 - CPU/GPU/RAM/VRAM telemetry where locally available
