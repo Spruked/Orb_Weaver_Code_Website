@@ -1,13 +1,20 @@
 {
-  "schema": "spruked-local-toolchain-v1",
+  "schema": "spruked-local-toolchain-v2",
   "runtime_network_dependency_allowed": false,
+  "build_release_network_acquisition_allowed": true,
   "required_tools": [
     {
       "id": "mcp_server",
       "kind": "first_party",
       "path": "tools/mcp_server",
       "source": "in-repository",
-      "status": "REQUIRED_LOCAL_CONTENT"
+      "runtime_policy": {
+        "explicit_local_path_only": true,
+        "registry_lookup": false,
+        "runtime_install": false,
+        "automatic_update": false
+      },
+      "status": "REQUIRED_PENDING_LOCAL_COPY"
     },
     {
       "id": "chrome-devtools-mcp",
@@ -18,11 +25,14 @@
       "upstream_version": "1.8.0",
       "license": "Apache-2.0",
       "runtime_policy": {
+        "explicit_local_path_only": true,
+        "npx_allowed": false,
+        "registry_lookup": false,
+        "runtime_install": false,
         "usage_statistics": false,
         "performance_crux": false,
         "update_checks": false,
-        "redact_network_headers": true,
-        "registry_lookup": false
+        "redact_network_headers": true
       },
       "status": "PINNED_PENDING_VENDOR_COPY"
     },
@@ -35,7 +45,9 @@
       "source_branch_at_pin": "develop",
       "license": "GPL-3.0",
       "runtime_policy": {
+        "explicit_local_path_only": true,
         "package_index_lookup": false,
+        "runtime_install": false,
         "automatic_update": false
       },
       "status": "PINNED_PENDING_VENDOR_COPY"
