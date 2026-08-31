@@ -2,295 +2,698 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self';" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self' http://127.0.0.1:18441;" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Orb Weaver Code Cipher Control Plane</title>
+  <title>Code Weaver Control Plane</title>
   <style>
     :root {
-      --bg: #090d10;
-      --panel: #10171b;
-      --panel2: #0d1317;
-      --border: rgba(84,214,185,.22);
-      --text: #e8f4f2;
-      --muted: #8da39f;
-      --accent: #54d6b9;
-      --warn: #f6c453;
-      --danger: #ff6b63;
+      --bg: #071014;
+      --bg2: #0a1419;
+      --panel: rgba(16, 29, 35, .88);
+      --panel2: rgba(10, 21, 26, .92);
+      --line: rgba(104, 229, 199, .16);
+      --line2: rgba(255,255,255,.07);
+      --text: #edf9f6;
+      --muted: #89a59f;
+      --accent: #65e5c5;
+      --accent2: #9bf5df;
+      --warn: #f2c45f;
+      --danger: #ff726a;
+      --blue: #7eb8ff;
+      --shadow: 0 18px 60px rgba(0,0,0,.34);
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
-    main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 22px 0 36px; display: grid; gap: 12px; }
-    header, .toolbar, .row { display: flex; align-items: center; gap: 9px; }
-    header { justify-content: space-between; align-items: end; }
-    h1, h2, h3, p { margin: 0; }
-    h1 { font-size: 30px; }
-    h2 { font-size: 14px; }
-    h3 { font-size: 11px; color: var(--muted); text-transform: uppercase; }
-    .muted { color: var(--muted); font-size: 12px; }
-    .ok { color: var(--accent); }
-    .warn { color: var(--warn); }
-    .danger { color: var(--danger); }
-    button, input {
-      min-height: 36px; border-radius: 6px; border: 1px solid var(--border);
-      background: rgba(84,214,185,.09); color: var(--text); font: inherit;
+    html { background: var(--bg); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 18% -10%, rgba(101,229,197,.11), transparent 34%),
+        radial-gradient(circle at 90% 3%, rgba(126,184,255,.08), transparent 27%),
+        linear-gradient(180deg, #081116 0%, #060c10 100%);
     }
-    button { padding: 0 11px; font-weight: 700; cursor: pointer; }
-    button:hover { background: rgba(84,214,185,.17); }
-    button:disabled { opacity: .45; cursor: default; }
-    input { width: 100%; padding: 0 10px; background: rgba(255,255,255,.035); }
-    code { color: var(--text); font-family: "JetBrains Mono", Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
-    .grid2, .grid3, .grid4 { display: grid; gap: 12px; }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .16;
+      background-image:
+        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+      background-size: 28px 28px;
+      mask-image: linear-gradient(to bottom, black, transparent 74%);
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    code {
+      color: #d9efea;
+      font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+    .shell {
+      width: min(1380px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 22px 0 44px;
+      display: grid;
+      gap: 14px;
+    }
+    .topbar {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 6px 2px 4px;
+    }
+    .eyebrow {
+      font-size: 10px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 850;
+    }
+    h1 { margin: 4px 0 0; font-size: 31px; letter-spacing: -.035em; line-height: 1; }
+    h2, h3, p { margin: 0; }
+    h2 { font-size: 13px; letter-spacing: .02em; }
+    h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    .subtitle { margin-top: 7px; font-size: 12px; color: var(--muted); }
+    .toolbar { display: flex; gap: 8px; align-items: center; }
+    .btn {
+      min-height: 36px;
+      padding: 0 12px;
+      border-radius: 9px;
+      border: 1px solid var(--line);
+      background: rgba(101,229,197,.075);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: .16s ease;
+    }
+    .btn:hover { transform: translateY(-1px); background: rgba(101,229,197,.13); border-color: rgba(101,229,197,.32); }
+    .btn.ghost { background: rgba(255,255,255,.025); border-color: var(--line2); }
+    .health-strip {
+      border: 1px solid var(--line);
+      background: linear-gradient(135deg, rgba(15,29,35,.92), rgba(9,18,23,.91));
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 12px 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .health-label { color: var(--muted); font-size: 11px; margin-right: 4px; }
+    .pill {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      min-height: 26px;
+      padding: 0 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line2);
+      background: rgba(255,255,255,.035);
+      font-size: 10px;
+      font-weight: 850;
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .pill.ok { border-color: rgba(101,229,197,.28); color: var(--accent2); background: rgba(101,229,197,.07); }
+    .pill.warn { border-color: rgba(242,196,95,.3); color: var(--warn); background: rgba(242,196,95,.07); }
+    .pill.danger { border-color: rgba(255,114,106,.34); color: var(--danger); background: rgba(255,114,106,.075); }
+    .pill.info { border-color: rgba(126,184,255,.28); color: #b9d8ff; background: rgba(126,184,255,.07); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #64747a; box-shadow: 0 0 0 3px rgba(255,255,255,.025); }
+    .dot.ok { background: var(--accent); box-shadow: 0 0 12px rgba(101,229,197,.45); }
+    .dot.warn { background: var(--warn); }
+    .dot.danger { background: var(--danger); box-shadow: 0 0 12px rgba(255,114,106,.35); }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0,1fr));
+      gap: 12px;
+    }
+    .metric-card, .card {
+      border: 1px solid var(--line);
+      background: linear-gradient(145deg, var(--panel), var(--panel2));
+      border-radius: 14px;
+      box-shadow: 0 10px 35px rgba(0,0,0,.22);
+    }
+    .metric-card { padding: 14px; min-height: 126px; position: relative; overflow: hidden; }
+    .metric-card::after {
+      content: "";
+      position: absolute;
+      width: 90px; height: 90px; border-radius: 50%;
+      right: -40px; top: -46px;
+      background: rgba(101,229,197,.07);
+      filter: blur(2px);
+    }
+    .metric-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; font-weight: 800; }
+    .metric-value { margin-top: 6px; font-size: 34px; font-weight: 900; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+    .metric-value.warn { color: var(--warn); }
+    .metric-value.danger { color: var(--danger); }
+    .metric-sub { margin-top: 4px; color: var(--muted); font-size: 11px; min-height: 16px; }
+    .bar { height: 6px; background: rgba(255,255,255,.065); border-radius: 999px; overflow: hidden; margin-top: 10px; }
+    .bar > span { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width .35s ease; }
+    .tabs-wrap {
+      border: 1px solid var(--line);
+      background: rgba(8,17,21,.88);
+      border-radius: 14px;
+      padding: 8px;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+    .tabs { display: flex; gap: 7px; min-width: max-content; }
+    .tab {
+      min-height: 38px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: transparent;
+      padding: 0 12px;
+      color: var(--muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 800;
+      transition: .16s ease;
+    }
+    .tab:hover { color: var(--text); background: rgba(255,255,255,.035); }
+    .tab.active {
+      color: var(--text);
+      border-color: rgba(101,229,197,.26);
+      background: linear-gradient(135deg, rgba(101,229,197,.12), rgba(101,229,197,.045));
+      box-shadow: inset 0 0 0 1px rgba(101,229,197,.035);
+    }
+    .tab .count { color: var(--muted); font-size: 10px; font-weight: 700; }
+    .view { display: none; gap: 12px; }
+    .view.active { display: grid; }
+    .grid2, .grid3 { display: grid; gap: 12px; }
     .grid2 { grid-template-columns: repeat(2,minmax(0,1fr)); }
     .grid3 { grid-template-columns: repeat(3,minmax(0,1fr)); }
-    .grid4 { grid-template-columns: repeat(4,minmax(0,1fr)); }
-    .card { min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: linear-gradient(145deg,var(--panel),var(--panel2)); display: grid; gap: 9px; }
-    .metric { font-size: 34px; line-height: 1; font-weight: 850; font-variant-numeric: tabular-nums; }
-    .bar { height: 7px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,.07); }
-    .bar > span { display: block; width: 0; height: 100%; background: var(--accent); }
+    .card { padding: 14px; min-width: 0; }
+    .card-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; }
     .facts, .list, .timeline { display: grid; gap: 7px; }
-    .fact, .item { display: grid; gap: 2px; padding-bottom: 7px; border-bottom: 1px solid rgba(84,214,185,.08); }
+    .fact, .item { border-bottom: 1px solid rgba(255,255,255,.055); padding-bottom: 7px; min-width: 0; }
     .fact:last-child, .item:last-child { border-bottom: 0; padding-bottom: 0; }
-    .timeline .item { grid-template-columns: 155px 120px minmax(0,1fr); align-items: start; }
-    .controls { display: grid; grid-template-columns: minmax(260px,1fr) auto; gap: 8px; align-items: end; }
-    .buttons { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 8px; }
-    .pill { width: fit-content; border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; font-size: 11px; color: var(--muted); }
-    .dot { width: 9px; height: 9px; border-radius: 50%; background: #64748b; }
-    .dot.ok { background: var(--accent); } .dot.warn { background: var(--warn); } .dot.err { background: var(--danger); }
-    #actionLog { min-height: 16px; }
-    @media (max-width: 900px) {
-      .grid2,.grid3,.grid4,.controls,.buttons,.timeline .item { grid-template-columns: 1fr; }
-      header { flex-direction: column; align-items: start; }
+    .fact-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+    .fact-value { margin-top: 2px; color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
+    .item strong { display: block; font-size: 12px; }
+    .item .meta { margin-top: 2px; color: var(--muted); font-size: 11px; }
+    .item code { display: block; margin-top: 3px; color: #b9d3cd; }
+    .timeline .item { display: grid; grid-template-columns: 150px 125px minmax(0,1fr); gap: 10px; align-items: start; }
+    .timeline .stamp { color: var(--muted); font-size: 10px; }
+    .timeline .kind { color: #b8d5ce; font-size: 10px; }
+    .timeline .summary { font-size: 11px; line-height: 1.4; }
+    .instance-hero {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background:
+        radial-gradient(circle at 85% 0%, rgba(101,229,197,.09), transparent 34%),
+        linear-gradient(140deg, rgba(18,35,42,.95), rgba(8,18,23,.95));
+      box-shadow: var(--shadow);
+    }
+    .instance-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .instance-name { font-size: 24px; font-weight: 900; letter-spacing: -.035em; }
+    .instance-caption { margin-top: 5px; color: var(--muted); font-size: 11px; }
+    .instance-metrics { margin-top: 15px; display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 8px; }
+    .mini {
+      border: 1px solid var(--line2);
+      border-radius: 10px;
+      padding: 10px;
+      background: rgba(255,255,255,.025);
+    }
+    .mini-label { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
+    .mini-value { margin-top: 3px; font-size: 18px; font-weight: 900; font-variant-numeric: tabular-nums; }
+    .notice {
+      border: 1px solid rgba(242,196,95,.22);
+      background: rgba(242,196,95,.055);
+      border-radius: 12px;
+      padding: 12px 14px;
+      color: #ead9aa;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .notice.good { border-color: rgba(101,229,197,.22); background: rgba(101,229,197,.055); color: #c7eee4; }
+    details.card { padding: 0; overflow: hidden; }
+    details.card > summary { list-style: none; cursor: pointer; padding: 13px 14px; font-size: 12px; font-weight: 850; }
+    details.card > summary::-webkit-details-marker { display: none; }
+    details.card[open] > summary { border-bottom: 1px solid var(--line); }
+    .controls-body { padding: 13px 14px; display: grid; gap: 9px; }
+    .controls-row { display: grid; grid-template-columns: minmax(240px,1fr) auto; gap: 8px; }
+    .controls-row input {
+      min-height: 36px; width: 100%; padding: 0 10px;
+      border-radius: 9px; border: 1px solid var(--line2);
+      background: rgba(255,255,255,.03); color: var(--text);
+    }
+    .button-grid { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 7px; }
+    #actionLog { color: var(--muted); min-height: 14px; }
+    .empty { color: var(--muted); font-size: 12px; padding: 8px 0; }
+    @media (max-width: 1000px) {
+      .metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .grid2,.grid3 { grid-template-columns: 1fr; }
+      .instance-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); }
+      .button-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+    }
+    @media (max-width: 680px) {
+      .shell { width: min(100% - 20px, 1380px); padding-top: 14px; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .metrics { grid-template-columns: 1fr; }
+      .instance-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .timeline .item { grid-template-columns: 1fr; gap: 3px; }
+      .controls-row { grid-template-columns: 1fr; }
+      .button-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
     }
   </style>
 </head>
 <body>
-<main>
-  <header>
-    <div>
-      <p class="muted">ORB WEAVER CODE CIPHER</p>
-      <h1>Session Monitor Control Plane</h1>
-      <p id="subtitle" class="muted">Runtime evidence and release evidence remain independently verifiable.</p>
-    </div>
-    <div class="toolbar"><button id="startApiBtn">Start / Check API</button><button id="refreshBtn">Refresh</button></div>
-  </header>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">Code Weaver</div>
+        <h1>AI Coding Evidence Control Plane</h1>
+        <p id="subtitle" class="subtitle">Runtime truth, window isolation, quota evidence, and release provenance.</p>
+      </div>
+      <div class="toolbar">
+        <button id="collectTopBtn" class="btn ghost">Collect Now</button>
+        <button id="refreshBtn" class="btn">Refresh</button>
+      </div>
+    </header>
 
-  <section class="card">
-    <h2>Operational Controls</h2>
-    <div class="controls">
-      <div><h3>Workspace</h3><input id="workspaceInput" /></div>
-      <button id="saveWorkspaceBtn">Save Workspace</button>
-    </div>
-    <div class="buttons">
-      <button id="startSessionBtn">Start Session</button>
-      <button id="endSessionBtn">End Session</button>
-      <button id="collectBtn">Collect Now</button>
-      <button id="scanVsCodeBtn">Scan VS Code</button>
-      <button id="ingestBtn">Ingest Codex</button>
-      <button id="scanCodeBtn">Scan Code</button>
-    </div>
-    <code id="actionLog">ready</code>
-  </section>
+    <section id="healthStrip" class="health-strip">
+      <span class="health-label">Session health</span>
+      <span class="pill"><span class="dot"></span>Loading</span>
+    </section>
 
-  <section class="grid4">
-    <article class="card"><h2 id="primaryTitle">Codex Primary</h2><div id="primaryMetric" class="metric">--</div><div class="bar"><span id="primaryBar"></span></div><code id="primaryReset">window unknown</code></article>
-    <article class="card"><h2 id="secondaryTitle">Codex Secondary</h2><div id="secondaryMetric" class="metric">--</div><div class="bar"><span id="secondaryBar"></span></div><code id="secondaryReset">window unknown</code></article>
-    <article class="card"><h2>Limit State</h2><div id="limitState" class="metric">--</div><code id="limitDetail">no observed limit event</code></article>
-    <article class="card"><h2>Monitor API</h2><div class="row"><span id="statusDot" class="dot"></span><strong id="statusText">offline</strong></div><code id="apiBase"></code></article>
-  </section>
+    <section class="metrics">
+      <article class="metric-card">
+        <div class="metric-label">Shared 5-Hour Limit · Used</div>
+        <div id="fiveHourMetric" class="metric-value">--</div>
+        <div id="fiveHourSub" class="metric-sub">provider observation unavailable</div>
+        <div class="bar"><span id="fiveHourBar"></span></div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label">Shared Weekly Limit · Used</div>
+        <div id="weeklyMetric" class="metric-value">--</div>
+        <div id="weeklySub" class="metric-sub">provider observation unavailable</div>
+        <div class="bar"><span id="weeklyBar"></span></div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label">VS Code Instances</div>
+        <div id="windowMetric" class="metric-value">--</div>
+        <div id="windowSub" class="metric-sub">child windows beneath one runtime</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label">Provider Limit State</div>
+        <div id="limitMetric" class="metric-value">--</div>
+        <div id="limitSub" class="metric-sub">no observed limit event</div>
+      </article>
+    </section>
 
-  <section class="grid2">
-    <article class="card"><h2>Current Session</h2><div id="sessionFacts" class="facts"></div></article>
-    <article class="card"><h2>Workspace / Git</h2><div id="gitFacts" class="facts"></div></article>
-  </section>
+    <nav class="tabs-wrap" aria-label="Code Weaver instance views">
+      <div id="tabs" class="tabs"></div>
+    </nav>
 
-  <section class="grid2">
-    <article class="card"><h2>Token Evidence</h2><div id="tokens" class="facts"></div></article>
-    <article class="card"><h2>Code Cipher Release Evidence</h2><div id="cipherFacts" class="facts"></div><div id="artifacts" class="list"></div></article>
-  </section>
+    <section id="globalView" class="view active">
+      <div class="grid2">
+        <article class="card"><div class="card-head"><h2>Runtime Session</h2><span id="runtimePill" class="pill">Unknown</span></div><div id="sessionFacts" class="facts"></div></article>
+        <article class="card"><div class="card-head"><h2>Workspace / Git</h2><span id="gitPill" class="pill">Git</span></div><div id="gitFacts" class="facts"></div></article>
+      </div>
 
-  <section class="grid2">
-    <article class="card"><h2>Runtime ↔ Cipher Correlation</h2><div id="correlation" class="list"></div></article>
-    <article class="card"><h2>Reload / IPC Impact</h2><div id="reloads" class="list"></div></article>
-  </section>
+      <div class="grid2">
+        <article class="card"><div class="card-head"><h2>Token Evidence</h2><span class="pill info">Conservative attribution</span></div><div id="tokens" class="facts"></div></article>
+        <article class="card"><div class="card-head"><h2>Release Evidence</h2><span id="releasePill" class="pill">Pending</span></div><div id="cipherFacts" class="facts"></div><div id="artifacts" class="list" style="margin-top:8px"></div></article>
+      </div>
 
-  <section class="card"><h2>Recent Session Timeline</h2><div id="timeline" class="timeline"></div></section>
+      <div class="grid2">
+        <article class="card"><div class="card-head"><h2>Runtime ↔ Release Correlation</h2></div><div id="correlation" class="list"></div></article>
+        <article class="card"><div class="card-head"><h2>Reload / IPC Impact</h2></div><div id="reloads" class="list"></div></article>
+      </div>
 
-  <section class="grid2">
-    <article class="card"><h2>Workspace Code Scan</h2><div id="codeScan" class="list"></div></article>
-    <article class="card"><h2>Evidence Source Health</h2><div id="sources" class="list"></div></article>
-  </section>
-</main>
-<script>
-  const $ = (id) => document.getElementById(id);
-  let latestSummary = null;
+      <article class="card"><div class="card-head"><h2>Recent Session Timeline</h2><span id="timelineCount" class="pill">0 events</span></div><div id="timeline" class="timeline"></div></article>
 
-  function escapeHtml(value) {
-    return String(value ?? "Unknown").replace(/[&<>"']/g, (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[ch]);
-  }
-  function short(value, max = 64) { const text = String(value ?? "Unknown"); return text.length > max ? `${text.slice(0,28)}...${text.slice(-24)}` : text; }
-  function time(value) { if (!value) return "Unknown"; const d = new Date(value); return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString(); }
-  function epochTime(value) { const n = Number(value); return Number.isFinite(n) ? new Date(n * 1000).toLocaleString() : "Unknown"; }
-  function fact(label, value) { return `<div class="fact"><span class="muted">${escapeHtml(label)}</span><code>${escapeHtml(value)}</code></div>`; }
-  function item(title, detail, meta = "") { return `<div class="item"><strong>${escapeHtml(title)}</strong><span class="muted">${escapeHtml(detail)}</span><code>${escapeHtml(meta)}</code></div>`; }
-  function activeSession() { return latestSummary?.today?.sessions?.find((s) => !s.ended_at) || null; }
+      <div class="grid2">
+        <article class="card"><div class="card-head"><h2>Workspace Code Scan</h2></div><div id="codeScan" class="list"></div></article>
+        <article class="card"><div class="card-head"><h2>Evidence Source Health</h2></div><div id="sources" class="list"></div></article>
+      </div>
 
-  function setPercent(metric, bar, raw) {
-    const value = Number(raw);
-    metric.className = "metric";
-    if (!Number.isFinite(value)) { metric.textContent = "?"; bar.style.width = "0%"; return; }
-    metric.textContent = `${value}%`;
-    bar.style.width = `${Math.min(100,Math.max(0,value))}%`;
-    if (value >= 90) { metric.classList.add("danger"); bar.style.background = "var(--danger)"; }
-    else if (value >= 75) { metric.classList.add("warn"); bar.style.background = "var(--warn)"; }
-    else { bar.style.background = "var(--accent)"; }
-  }
+      <details class="card">
+        <summary>Operator Controls</summary>
+        <div class="controls-body">
+          <div class="controls-row"><input id="workspaceInput" aria-label="Workspace path" /><button id="saveWorkspaceBtn" class="btn">Bind Workspace</button></div>
+          <div class="button-grid">
+            <button id="startApiBtn" class="btn ghost">Check API</button>
+            <button id="startSessionBtn" class="btn ghost">Start Session</button>
+            <button id="endSessionBtn" class="btn ghost">End Session</button>
+            <button id="collectBtn" class="btn ghost">Collect</button>
+            <button id="scanVsCodeBtn" class="btn ghost">Scan VS Code</button>
+            <button id="ingestBtn" class="btn ghost">Ingest Rollout</button>
+          </div>
+          <code id="actionLog">ready</code>
+        </div>
+      </details>
+    </section>
 
-  function windowLabel(name, data) {
-    const minutes = Number(data?.window_minutes);
-    if (minutes === 300) return `${name} · 5 hour`;
-    if (minutes === 10080) return `${name} · 7 day`;
-    return Number.isFinite(minutes) ? `${name} · ${minutes} min` : name;
-  }
+    <section id="instanceView" class="view">
+      <article class="instance-hero">
+        <div class="instance-top">
+          <div><div id="instanceName" class="instance-name">VS Code Instance</div><div id="instanceCaption" class="instance-caption"></div></div>
+          <div id="instanceBadges" class="toolbar"></div>
+        </div>
+        <div class="instance-metrics">
+          <div class="mini"><div class="mini-label">Evidence events</div><div id="instEvents" class="mini-value">0</div></div>
+          <div class="mini"><div class="mini-label">Rollout</div><div id="instRollout" class="mini-value">0</div></div>
+          <div class="mini"><div class="mini-label">Token snapshots</div><div id="instTokens" class="mini-value">0</div></div>
+          <div class="mini"><div class="mini-label">IPC signals</div><div id="instIpc" class="mini-value">0</div></div>
+          <div class="mini"><div class="mini-label">Threads</div><div id="instThreads" class="mini-value">0</div></div>
+          <div class="mini"><div class="mini-label">Latest turn</div><div id="instTurn" class="mini-value">—</div></div>
+        </div>
+      </article>
+      <div id="instanceNotice" class="notice"></div>
+      <div class="grid2">
+        <article class="card"><div class="card-head"><h2>Instance Identity</h2></div><div id="instanceFacts" class="facts"></div></article>
+        <article class="card"><div class="card-head"><h2>Instance Token Evidence</h2></div><div id="instanceTokens" class="facts"></div></article>
+      </div>
+      <article class="card"><div class="card-head"><h2>Instance Evidence Timeline</h2></div><div id="instanceTimeline" class="timeline"></div></article>
+    </section>
 
-  function currentLimit(summary) {
-    const event = summary.timeline?.latest_limit_event;
-    if (!event?.timestamp) return null;
-    const quotaTs = summary.quota?.evidence_timestamp || summary.quota?.observed_at;
-    if (!quotaTs) return event;
-    return Date.parse(event.timestamp) >= Date.parse(quotaTs) ? event : null;
-  }
+    <section id="unassignedView" class="view">
+      <article class="instance-hero">
+        <div class="instance-top"><div><div class="instance-name">Unassigned / Global Evidence</div><div class="instance-caption">Evidence that cannot yet be defensibly tied to one VS Code child window.</div></div><span class="pill warn">No guessing</span></div>
+        <div class="instance-metrics">
+          <div class="mini"><div class="mini-label">Unassigned events</div><div id="unEvents" class="mini-value">0</div></div>
+          <div class="mini"><div class="mini-label">Rollout events</div><div id="unRollout" class="mini-value">0</div></div>
+          <div class="mini"><div class="mini-label">Token snapshots</div><div id="unTokens" class="mini-value">0</div></div>
+        </div>
+      </article>
+      <div id="unassignedNote" class="notice">Code Weaver preserves these records globally instead of falsely attributing them to the wrong window.</div>
+    </section>
+  </main>
 
-  function render(summary) {
-    latestSummary = summary;
-    $("workspaceInput").value = summary.workspacePath || "";
-    $("apiBase").textContent = summary.apiBase || "";
-    $("subtitle").textContent = summary.ok ? `Updated ${time(summary.observedAt)}` : (summary.error || "Monitor API unavailable");
+  <script>
+    const API = "http://127.0.0.1:18441";
+    const $ = (id) => document.getElementById(id);
+    let latestSummary = null;
+    let latestInstances = { instances: [], unassigned: {} };
+    let activeTab = "global";
 
-    const cipher = summary.codeCipher || {};
-    renderCipher(cipher);
-    renderCodeScan(summary.workspaceScan);
+    function escapeHtml(value) {
+      return String(value ?? "Unknown").replace(/[&<>"']/g, (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[ch]);
+    }
+    function short(value, max = 72) { const text = String(value ?? "Unknown"); return text.length > max ? `${text.slice(0,34)}…${text.slice(-28)}` : text; }
+    function time(value) { if (!value) return "Unknown"; const d = new Date(value); return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString(); }
+    function epochTime(value) { const n = Number(value); return Number.isFinite(n) ? new Date(n * 1000).toLocaleString() : "Unknown"; }
+    function fact(label, value) { return `<div class="fact"><div class="fact-label">${escapeHtml(label)}</div><div class="fact-value"><code>${escapeHtml(value)}</code></div></div>`; }
+    function item(title, detail, meta = "") { return `<div class="item"><strong>${escapeHtml(title)}</strong><div class="meta">${escapeHtml(detail)}</div>${meta ? `<code>${escapeHtml(meta)}</code>` : ""}</div>`; }
+    function activeSession() { return latestSummary?.today?.sessions?.find((s) => !s.ended_at) || latestSummary?.today?.sessions?.[0] || null; }
 
-    if (!summary.ok) {
-      $("statusDot").className = "dot err"; $("statusText").textContent = "offline";
-      setPercent($("primaryMetric"), $("primaryBar"), null); setPercent($("secondaryMetric"), $("secondaryBar"), null);
-      $("limitState").textContent = "?"; $("limitDetail").textContent = "monitor offline";
-      $("sessionFacts").innerHTML = fact("Monitor", "offline");
-      $("gitFacts").innerHTML = fact("Workspace", summary.workspacePath);
-      $("tokens").innerHTML = fact("Token evidence", "unavailable");
-      $("correlation").innerHTML = item("Runtime unavailable", "Code Cipher evidence remains separate");
-      $("reloads").innerHTML = item("No live view", "Monitor API offline");
-      $("timeline").innerHTML = '<span class="muted">Monitor API offline.</span>';
-      $("sources").innerHTML = item("No source health", "Monitor API offline");
-      return;
+    async function apiJson(pathname) {
+      try {
+        const response = await fetch(`${API}${pathname}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch {
+        return null;
+      }
     }
 
-    $("statusDot").className = "dot ok"; $("statusText").textContent = "online";
-    const quota = summary.quota || {};
-    const t = summary.timeline || {};
-    const rate = t.latest_rate_limits || {};
-    setPercent($("primaryMetric"), $("primaryBar"), quota.primary_used_percent);
-    setPercent($("secondaryMetric"), $("secondaryBar"), quota.secondary_used_percent);
-    $("primaryTitle").textContent = windowLabel("Codex Primary", rate.primary);
-    $("secondaryTitle").textContent = windowLabel("Codex Secondary", rate.secondary);
-    $("primaryReset").textContent = rate.primary ? `reset ${epochTime(rate.primary.resets_at)}` : "window metadata not observed";
-    $("secondaryReset").textContent = rate.secondary ? `reset ${epochTime(rate.secondary.resets_at)}` : "window metadata not observed";
+    function pill(text, kind = "") { return `<span class="pill ${kind}">${escapeHtml(text)}</span>`; }
 
-    const limit = currentLimit(summary);
-    if (limit) {
-      $("limitState").textContent = "REACHED"; $("limitState").className = "metric danger";
-      $("limitDetail").textContent = `${limit.error_code || "usage_limit_exceeded"} · ${time(limit.timestamp)}`;
-    } else {
-      $("limitState").textContent = "CLEAR"; $("limitState").className = "metric ok";
-      $("limitDetail").textContent = t.latest_limit_event ? `last limit ${time(t.latest_limit_event.timestamp)}` : "no observed limit event";
+    function setMetric(valueEl, barEl, value) {
+      const pct = Number(value);
+      valueEl.className = "metric-value";
+      if (!Number.isFinite(pct)) {
+        valueEl.textContent = "?";
+        if (barEl) barEl.style.width = "0%";
+        return;
+      }
+      valueEl.textContent = `${Math.round(pct * 10) / 10}%`;
+      if (barEl) {
+        barEl.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+        barEl.style.background = pct >= 90 ? "var(--danger)" : pct >= 75 ? "var(--warn)" : "var(--accent)";
+      }
+      if (pct >= 90) valueEl.classList.add("danger");
+      else if (pct >= 75) valueEl.classList.add("warn");
     }
 
-    const sessions = summary.today?.sessions || [];
-    const session = sessions.find((s) => !s.ended_at) || sessions[0] || null;
-    const counts = t.counts || {};
-    const sourceCounts = t.rollout_source_counts || {};
-    $("sessionFacts").innerHTML = [
-      fact("Session ID", session?.id), fact("Started", time(session?.started_at)), fact("Ended", session?.ended_at ? time(session.ended_at) : "ACTIVE"),
-      fact("Workspace", session?.workspace_path), fact("Timeline events", t.event_count ?? 0),
-      fact("Quota / rollout", `${counts.quota_update ?? 0} / ${counts.rollout_record ?? 0}`),
-      fact("Token / task complete", `${sourceCounts.token_count ?? 0} / ${sourceCounts.task_complete ?? 0}`)
-    ].join("");
+    function currentLimit(summary) {
+      const event = summary?.timeline?.latest_limit_event;
+      if (!event?.timestamp) return null;
+      const quotaTs = summary?.quota?.evidence_timestamp || summary?.quota?.observed_at;
+      if (!quotaTs) return event;
+      return Date.parse(event.timestamp) >= Date.parse(quotaTs) ? event : null;
+    }
 
-    const git = summary.git || {};
-    $("gitFacts").innerHTML = [
-      fact("Repository", git.repo_root || session?.repo_root), fact("Branch", git.branch || session?.branch), fact("HEAD", git.head || session?.head),
-      fact("Remote", short(git.remote || session?.remote)), fact("Modified / untracked / staged", `${git.modified_files ?? "?"} / ${git.untracked_files ?? "?"} / ${git.staged_files ?? "?"}`),
-      fact("Ahead / behind", `${git.ahead ?? "?"} / ${git.behind ?? "?"}`)
-    ].join("");
+    function renderHealth(summary, instances, releaseEvidence) {
+      const session = activeSession();
+      const limit = currentLimit(summary);
+      const vaultHealth = summary?.sources?.code_weaver_vault?.status === "degraded" ? "degraded" : "ok";
+      const releaseStatus = releaseEvidence?.verification_result || releaseEvidence?.status || "unavailable";
+      const inferredCount = (instances.instances || []).filter((i) => i.identity_evidence_class === "inferred").length;
+      $("healthStrip").innerHTML = [
+        '<span class="health-label">Session health</span>',
+        pill(summary?.ok ? "Monitor online" : "Monitor offline", summary?.ok ? "ok" : "danger"),
+        pill(session && !session.ended_at ? "Runtime active" : "No active runtime", session && !session.ended_at ? "ok" : "warn"),
+        pill(`${instances.instance_count || 0} window instance${instances.instance_count === 1 ? "" : "s"}`, instances.instance_count ? "info" : "warn"),
+        inferredCount ? pill(`${inferredCount} inferred identity`, "warn") : pill("Window identities clean", "ok"),
+        pill(vaultHealth === "ok" ? "Vault healthy" : "Vault degraded", vaultHealth === "ok" ? "ok" : "danger"),
+        pill(limit ? "Limit reached" : "Limit clear", limit ? "danger" : "ok"),
+        pill(`Release ${String(releaseStatus).replaceAll("_", " ")}`, releaseStatus === "SEALED_RELEASE_EVIDENCE" ? "ok" : "warn")
+      ].join("");
+    }
 
-    const token = t.token_usage_summary || {};
-    const sum = token.summed_last_token_usage || {};
-    $("tokens").innerHTML = [
-      fact("Attributed turns", token.attributed_last_usage_turn_count ?? 0), fact("Unattributed snapshots", token.unattributed_last_usage_record_count ?? 0),
-      fact("Input", sum.input_tokens ?? 0), fact("Cached input", sum.cached_input_tokens ?? 0), fact("Output", sum.output_tokens ?? 0),
-      fact("Reasoning", sum.reasoning_output_tokens ?? 0), fact("Total attributed", sum.total_tokens ?? 0), fact("Max cumulative snapshot", token.max_total_tokens ?? "Unknown")
-    ].join("");
+    function renderMetrics(summary, instances) {
+      const quota = summary?.quota || {};
+      const five = quota.five_hour?.used_percent ?? quota.primary_used_percent;
+      const weekly = quota.weekly?.used_percent ?? quota.secondary_used_percent;
+      setMetric($("fiveHourMetric"), $("fiveHourBar"), five);
+      setMetric($("weeklyMetric"), $("weeklyBar"), weekly);
+      const fiveRemain = quota.five_hour?.remaining_percent_derived;
+      const weeklyRemain = quota.weekly?.remaining_percent_derived;
+      $("fiveHourSub").textContent = Number.isFinite(Number(fiveRemain)) ? `${fiveRemain}% remaining · DERIVED · reset ${epochTime(summary?.timeline?.latest_rate_limits?.primary?.resets_at)}` : "shared provider allowance";
+      $("weeklySub").textContent = Number.isFinite(Number(weeklyRemain)) ? `${weeklyRemain}% remaining · DERIVED · reset ${epochTime(summary?.timeline?.latest_rate_limits?.secondary?.resets_at)}` : "shared provider allowance";
+      $("windowMetric").textContent = String(instances.instance_count || 0);
+      const inferred = (instances.instances || []).filter((i) => i.identity_evidence_class === "inferred").length;
+      $("windowSub").textContent = inferred ? `${inferred} inferred · ${Math.max(0, (instances.instance_count || 0) - inferred)} registered/derived` : "all child identities registered/derived";
+      const limit = currentLimit(summary);
+      $("limitMetric").textContent = limit ? "REACHED" : "CLEAR";
+      $("limitMetric").className = `metric-value ${limit ? "danger" : ""}`;
+      $("limitSub").textContent = limit ? `${limit.error_code || "usage_limit_exceeded"} · ${time(limit.timestamp)}` : (summary?.timeline?.latest_limit_event ? `last reached ${time(summary.timeline.latest_limit_event.timestamp)}` : "no observed provider limit event");
+    }
 
-    renderCorrelation(session, cipher);
-    $("reloads").innerHTML = (t.reload_quota_windows || []).length
-      ? t.reload_quota_windows.slice(-6).reverse().map((w) => item(w.reload_event?.event_type || "reload", w.reload_event?.summary || "reload signal", `Δ primary ${w.quota_delta?.primary_used_percent ?? "?"}% · secondary ${w.quota_delta?.secondary_used_percent ?? "?"}%`)).join("")
-      : item("No reload windows", "No live reload/IPC evidence in this session", "");
+    function renderTabs(instances) {
+      const rows = instances.instances || [];
+      const tabs = [
+        { id: "global", label: "Global", kind: "ok", count: "shared" },
+        ...rows.map((instance, index) => ({
+          id: instance.id,
+          label: instance.instance_label || instance.workspace_path?.split(/[\\/]/).filter(Boolean).pop() || `Window ${index + 1}`,
+          kind: instance.identity_evidence_class === "inferred" ? "warn" : "ok",
+          count: instance.status || "active"
+        })),
+        { id: "unassigned", label: "Unassigned", kind: (instances.unassigned?.event_count || 0) ? "warn" : "ok", count: instances.unassigned?.event_count || 0 }
+      ];
+      if (!tabs.some((tab) => tab.id === activeTab)) activeTab = "global";
+      $("tabs").innerHTML = tabs.map((tab) => `<button class="tab ${tab.id === activeTab ? "active" : ""}" data-tab="${escapeHtml(tab.id)}"><span class="dot ${tab.kind}"></span>${escapeHtml(tab.label)}<span class="count">${escapeHtml(tab.count)}</span></button>`).join("");
+      $("tabs").querySelectorAll(".tab").forEach((button) => button.addEventListener("click", () => { activeTab = button.dataset.tab; renderActiveView(); renderTabs(latestInstances); }));
+    }
 
-    $("timeline").innerHTML = (t.timeline || []).length
-      ? t.timeline.slice(-18).reverse().map((e) => `<div class="item"><span class="muted">${escapeHtml(time(e.timestamp))}</span><code>${escapeHtml(e.event_type)}</code><span>${escapeHtml(e.summary || "")}</span></div>`).join("")
-      : '<span class="muted">No session events yet.</span>';
+    function renderActiveView() {
+      $("globalView").classList.toggle("active", activeTab === "global");
+      $("instanceView").classList.toggle("active", activeTab !== "global" && activeTab !== "unassigned");
+      $("unassignedView").classList.toggle("active", activeTab === "unassigned");
+      if (activeTab !== "global" && activeTab !== "unassigned") {
+        const instance = (latestInstances.instances || []).find((row) => row.id === activeTab);
+        if (instance) renderInstance(instance);
+      }
+      if (activeTab === "unassigned") renderUnassigned(latestInstances.unassigned || {});
+    }
 
-    const sourceEntries = Object.entries(summary.sources || {});
-    $("sources").innerHTML = sourceEntries.length
-      ? sourceEntries.map(([name,r]) => item(name, `${r.category} / ${r.evidence_class}`, time(r.last_seen))).join("")
-      : item("No sources", "No evidence source has reported yet", "");
-  }
+    function renderInstance(instance) {
+      const identity = String(instance.identity_evidence_class || "unknown").toUpperCase();
+      $("instanceName").textContent = instance.instance_label || "VS Code Instance";
+      $("instanceCaption").textContent = `${instance.workspace_path || "Workspace not authoritatively bound"} · ${short(instance.id)}`;
+      $("instanceBadges").innerHTML = pill(instance.status || "unknown", instance.status === "active" ? "ok" : "warn") + pill(identity, identity === "INFERRED" ? "warn" : identity === "DERIVED" ? "info" : "ok");
+      $("instEvents").textContent = instance.event_count ?? 0;
+      $("instRollout").textContent = instance.rollout_event_count ?? 0;
+      const token = instance.token_usage_summary || {};
+      $("instTokens").textContent = (token.attributed_last_usage_turn_count || 0) + (token.unattributed_last_usage_record_count || 0);
+      $("instIpc").textContent = instance.ipc_event_count ?? 0;
+      $("instThreads").textContent = (instance.thread_ids || []).length;
+      $("instTurn").textContent = instance.latest_turn_id ? short(instance.latest_turn_id, 16) : "—";
+      $("instanceNotice").className = `notice ${identity === "OBSERVED" ? "good" : ""}`;
+      $("instanceNotice").textContent = identity === "INFERRED"
+        ? "This child was inferred from an active-looking VS Code log session. Code Weaver keeps that limitation visible until a stronger launcher/log identity link exists."
+        : identity === "DERIVED"
+          ? "This child was registered by Code Weaver and its VS Code log-session binding was derived from a unique launch-time association."
+          : "This child identity was directly registered by the Code Weaver launcher. Shared account quota still remains global above all window tabs.";
+      $("instanceFacts").innerHTML = [
+        fact("Instance ID", instance.id),
+        fact("Identity class", identity),
+        fact("Workspace", instance.workspace_path || "UNBOUND"),
+        fact("Source", instance.source),
+        fact("Window identifier", instance.window_identifier || "Unknown"),
+        fact("Process ID", instance.process_id || "Unknown"),
+        fact("VS Code log session", instance.log_session_dir || "UNBOUND"),
+        fact("Started", time(instance.started_at)),
+        fact("Last activity", time(instance.latest_activity_at || instance.last_observed_at)),
+        fact("Git branch / HEAD", `${instance.branch || "Unknown"} / ${instance.head || "Unknown"}`)
+      ].join("");
+      const sum = token.summed_last_token_usage || {};
+      $("instanceTokens").innerHTML = [
+        fact("Attributed turns", token.attributed_last_usage_turn_count ?? 0),
+        fact("Unattributed snapshots", token.unattributed_last_usage_record_count ?? 0),
+        fact("Input", sum.input_tokens ?? 0),
+        fact("Cached input", sum.cached_input_tokens ?? 0),
+        fact("Output", sum.output_tokens ?? 0),
+        fact("Reasoning", sum.reasoning_output_tokens ?? 0),
+        fact("Total attributed", sum.total_tokens ?? 0),
+        fact("Max cumulative", token.max_total_tokens ?? "Unknown")
+      ].join("");
+      const rows = instance.timeline || [];
+      $("instanceTimeline").innerHTML = rows.length ? rows.slice().reverse().map((e) => `<div class="item"><span class="stamp">${escapeHtml(time(e.timestamp))}</span><code class="kind">${escapeHtml(e.event_type)}</code><span class="summary">${escapeHtml(e.summary || "")}</span></div>`).join("") : '<div class="empty">No child-bound evidence yet. Global evidence is not copied here without an identity link.</div>';
+    }
 
-  function renderCipher(cipher) {
-    $("cipherFacts").innerHTML = [fact("Release", cipher.releaseId), fact("Version", cipher.version), fact("Repository", cipher.repository), fact("Source HEAD", cipher.gitCommit), fact("Manifest hash", cipher.sourceManifestHash), fact("Verification", cipher.verificationResult)].join("");
-    const rows = Array.isArray(cipher.artifacts) ? cipher.artifacts : [];
-    $("artifacts").innerHTML = rows.length ? rows.map((a) => item(a.filename, `${a.platform} / ${a.sku}`, a.sha256)).join("") : item("No protected artifact evidence", "Release manifest contains no completed artifact", "");
-  }
+    function renderUnassigned(unassigned) {
+      $("unEvents").textContent = unassigned.event_count ?? 0;
+      $("unRollout").textContent = unassigned.rollout_event_count ?? 0;
+      $("unTokens").textContent = unassigned.token_count ?? 0;
+      $("unassignedNote").textContent = unassigned.note || "Evidence without a defensible child-window identity remains global/unassigned; Code Weaver does not guess.";
+    }
 
-  function renderCorrelation(session, cipher) {
-    const repoName = session?.repo_root?.split(/[\\/]/).filter(Boolean).pop();
-    const cipherName = cipher.repository?.split(/[\\/]/).filter(Boolean).pop();
-    const repoState = repoName && cipherName ? (repoName === cipherName ? "MATCH" : "MISMATCH") : "UNKNOWN";
-    const headState = session?.head && cipher.gitCommit ? (session.head === cipher.gitCommit ? "MATCH" : "MISMATCH") : "UNKNOWN";
-    $("correlation").innerHTML = [
-      item(`Repository: ${repoState}`, `Monitor: ${short(session?.repo_root)}`, `Cipher: ${short(cipher.repository)}`),
-      item(`Git HEAD: ${headState}`, `Monitor: ${short(session?.head)}`, `Cipher: ${short(cipher.gitCommit)}`),
-      item("Source manifest: UNKNOWN", "Monitor-side source manifest not yet sealed", `Cipher: ${short(cipher.sourceManifestHash)}`),
-      item("Release identity", `Session: ${short(session?.id)}`, `Release: ${short(cipher.releaseId)}`)
-    ].join("");
-  }
+    function renderGlobal(summary, releaseEvidence) {
+      latestSummary = summary;
+      const session = activeSession();
+      $("workspaceInput").value = summary?.workspacePath || "";
+      $("subtitle").textContent = summary?.ok ? `Updated ${time(summary.observedAt)} · one parent runtime, isolated child windows` : (summary?.error || "Monitor API unavailable");
+      $("runtimePill").className = `pill ${session && !session.ended_at ? "ok" : "warn"}`;
+      $("runtimePill").textContent = session && !session.ended_at ? "ACTIVE" : "INACTIVE";
+      $("sessionFacts").innerHTML = [
+        fact("Session ID", session?.id), fact("Started", time(session?.started_at)), fact("Status", session?.ended_at ? `Ended ${time(session.ended_at)}` : "ACTIVE"),
+        fact("Workspace", session?.workspace_path), fact("Timeline events", summary?.timeline?.event_count ?? 0), fact("Window instances", latestInstances.instance_count ?? 0)
+      ].join("");
+      const git = summary?.git || {};
+      $("gitPill").className = `pill ${(git.modified_files || git.untracked_files || git.staged_files) ? "warn" : "ok"}`;
+      $("gitPill").textContent = (git.modified_files || git.untracked_files || git.staged_files) ? "DIRTY" : "CLEAN";
+      $("gitFacts").innerHTML = [
+        fact("Repository", git.repo_root || session?.repo_root), fact("Branch", git.branch || session?.branch), fact("HEAD", git.head || session?.head),
+        fact("Remote", short(git.remote || session?.remote)), fact("Modified / untracked / staged", `${git.modified_files ?? "?"} / ${git.untracked_files ?? "?"} / ${git.staged_files ?? "?"}`), fact("Ahead / behind", `${git.ahead ?? "?"} / ${git.behind ?? "?"}`)
+      ].join("");
+      const token = summary?.timeline?.token_usage_summary || {};
+      const sum = token.summed_last_token_usage || {};
+      $("tokens").innerHTML = [
+        fact("Attributed turns", token.attributed_last_usage_turn_count ?? 0), fact("Derived turn assignments", token.derived_attributed_last_usage_turn_count ?? 0), fact("Unattributed snapshots", token.unattributed_last_usage_record_count ?? 0),
+        fact("Input", sum.input_tokens ?? 0), fact("Cached input", sum.cached_input_tokens ?? 0), fact("Output", sum.output_tokens ?? 0), fact("Reasoning", sum.reasoning_output_tokens ?? 0), fact("Total attributed", sum.total_tokens ?? 0), fact("Max cumulative snapshot", token.max_total_tokens ?? "Unknown")
+      ].join("");
+      renderRelease(summary, releaseEvidence);
+      renderReloads(summary);
+      renderTimeline(summary);
+      renderCodeScan(summary?.workspaceScan);
+      renderSources(summary?.sources || {});
+    }
 
-  function renderCodeScan(scan) {
-    if (!scan) { $("codeScan").innerHTML = item("No scan", "Workspace not scanned", ""); return; }
-    const ext = Array.isArray(scan.topExtensions) ? scan.topExtensions.map((e) => `${e.extension} ${e.count}`).join(", ") : "";
-    const changed = Array.isArray(scan.changed) ? scan.changed : [];
-    $("codeScan").innerHTML = [item("Files", `${scan.fileCount || 0} scanned`, `${Math.round((scan.totalBytes || 0)/1024)} KB`), item("Top types", ext || "none", short(scan.root)), item("Changed", changed.slice(0,8).join(" | ") || "clean", `${changed.length} total`), item("Manifests", (scan.manifests || []).join(" | ") || "none", "")].join("");
-  }
+    function renderRelease(summary, verified) {
+      const legacy = summary?.codeCipher || {};
+      const hasVerified = verified && verified.status !== "unavailable" && verified.verification_result;
+      const release = hasVerified ? {
+        releaseId: verified.release_id,
+        version: verified.version,
+        repository: verified.repository,
+        gitCommit: verified.git_commit,
+        sourceManifestHash: verified.source_manifest_hash,
+        verificationResult: verified.verification_result,
+        artifacts: verified.artifacts || []
+      } : legacy;
+      const verification = release.verificationResult || "UNKNOWN";
+      $("releasePill").className = `pill ${verification === "SEALED_RELEASE_EVIDENCE" ? "ok" : "warn"}`;
+      $("releasePill").textContent = verification === "SEALED_RELEASE_EVIDENCE" ? "SEALED" : "PENDING";
+      $("cipherFacts").innerHTML = [fact("Release", release.releaseId), fact("Version", release.version), fact("Repository", release.repository), fact("Source HEAD", release.gitCommit), fact("Manifest hash", release.sourceManifestHash), fact("Verification", verification)].join("");
+      const artifacts = Array.isArray(release.artifacts) ? release.artifacts : [];
+      $("artifacts").innerHTML = artifacts.length ? artifacts.map((a) => item(a.filename || a.path || "artifact", `${a.platform || "artifact"} · ${a.size ?? "size unknown"}`, a.sha256 || "hash unavailable")).join("") : item("No sealed artifact", "Release/source seal may exist without a packaged artifact", "");
+      const session = activeSession();
+      const repoName = session?.repo_root?.split(/[\\/]/).filter(Boolean).pop();
+      const releaseName = release.repository?.split(/[\\/]/).filter(Boolean).pop();
+      const repoState = repoName && releaseName ? (repoName === releaseName ? "MATCH" : "MISMATCH") : "UNKNOWN";
+      const headState = session?.head && release.gitCommit ? (session.head === release.gitCommit ? "MATCH" : "MISMATCH") : "UNKNOWN";
+      $("correlation").innerHTML = [
+        item(`Repository: ${repoState}`, `Runtime: ${short(session?.repo_root)}`, `Release: ${short(release.repository)}`),
+        item(`Git HEAD: ${headState}`, `Runtime: ${short(session?.head)}`, `Release: ${short(release.gitCommit)}`),
+        item(`Source manifest: ${release.sourceManifestHash ? "SEALED" : "UNKNOWN"}`, "Source manifest remains independent of runtime Git state", short(release.sourceManifestHash)),
+        item("Release identity", `Session: ${short(session?.id)}`, `Release: ${short(release.releaseId)}`)
+      ].join("");
+    }
 
-  async function refresh() { render(await window.widgetBridge.getMonitorSummary()); }
-  async function act(message, fn) {
-    $("actionLog").textContent = message;
-    try { const result = await fn(); $("actionLog").textContent = result?.ok === false ? result.error : JSON.stringify(result); }
-    catch (error) { $("actionLog").textContent = String(error); }
-    await refresh();
-  }
+    function renderReloads(summary) {
+      const rows = summary?.timeline?.reload_quota_windows || [];
+      $("reloads").innerHTML = rows.length ? rows.slice(-7).reverse().map((w) => item(w.reload_event?.event_type || "reload", w.reload_event?.summary || "reload signal", `Δ 5h ${w.quota_delta?.primary_used_percent ?? "?"}% · weekly ${w.quota_delta?.secondary_used_percent ?? "?"}%`)).join("") : item("No reload windows", "No live reload/IPC evidence in this runtime", "");
+    }
 
-  $("refreshBtn").addEventListener("click", refresh);
-  $("startApiBtn").addEventListener("click", () => act("checking monitor API...", () => window.widgetBridge.startMonitor()));
-  $("saveWorkspaceBtn").addEventListener("click", () => act("saving workspace...", () => window.widgetBridge.setWorkspacePath($("workspaceInput").value)));
-  $("startSessionBtn").addEventListener("click", () => act("starting session...", () => window.widgetBridge.createSession()));
-  $("endSessionBtn").addEventListener("click", () => { const s = activeSession(); return s ? act("ending session...", () => window.widgetBridge.endSession(s.id)) : ($("actionLog").textContent = "no active session"); });
-  $("collectBtn").addEventListener("click", () => act("collecting evidence...", () => window.widgetBridge.collectEvidence()));
-  $("scanVsCodeBtn").addEventListener("click", () => { const s = activeSession(); return s ? act("scanning VS Code...", () => window.widgetBridge.scanVsCode(s.id)) : ($("actionLog").textContent = "start a session first"); });
-  $("ingestBtn").addEventListener("click", () => { const s = activeSession(); return s ? act("ingesting Codex...", () => window.widgetBridge.ingestRollout(s.id)) : ($("actionLog").textContent = "start a session first"); });
-  $("scanCodeBtn").addEventListener("click", () => act("scanning workspace...", () => window.widgetBridge.scanWorkspace()));
+    function renderTimeline(summary) {
+      const rows = summary?.timeline?.timeline || [];
+      $("timelineCount").textContent = `${summary?.timeline?.event_count ?? rows.length} events`;
+      $("timeline").innerHTML = rows.length ? rows.slice(-22).reverse().map((e) => `<div class="item"><span class="stamp">${escapeHtml(time(e.timestamp))}</span><code class="kind">${escapeHtml(e.event_type)}</code><span class="summary">${escapeHtml(e.summary || "")}</span></div>`).join("") : '<div class="empty">No session evidence yet.</div>';
+    }
 
-  refresh();
-  setInterval(refresh, 5000);
-</script>
+    function renderCodeScan(scan) {
+      if (!scan) { $("codeScan").innerHTML = item("No scan", "Workspace not scanned", ""); return; }
+      const ext = Array.isArray(scan.topExtensions) ? scan.topExtensions.map((e) => `${e.extension} ${e.count}`).join(", ") : "";
+      const changed = Array.isArray(scan.changed) ? scan.changed : [];
+      $("codeScan").innerHTML = [item("Files", `${scan.fileCount || 0} scanned`, `${Math.round((scan.totalBytes || 0)/1024)} KB`), item("Top types", ext || "none", short(scan.root)), item("Changed", changed.slice(0,8).join(" | ") || "clean", `${changed.length} total`), item("Manifests", (scan.manifests || []).join(" | ") || "none", "")].join("");
+    }
+
+    function renderSources(sources) {
+      const entries = Object.entries(sources);
+      $("sources").innerHTML = entries.length ? entries.map(([name,r]) => item(name, `${r.category || "source"} · ${String(r.evidence_class || "unknown").toUpperCase()}`, time(r.last_seen))).join("") : item("No sources", "No evidence source has reported yet", "");
+    }
+
+    async function loadInstances(sessionId) {
+      if (!sessionId) return { instances: [], instance_count: 0, unassigned: {} };
+      return await apiJson(`/runtime/session/${encodeURIComponent(sessionId)}/instances`) || { instances: [], instance_count: 0, unassigned: {} };
+    }
+
+    async function refresh() {
+      const summary = await window.widgetBridge.getMonitorSummary();
+      latestSummary = summary;
+      const session = (summary?.today?.sessions || []).find((s) => !s.ended_at) || summary?.today?.sessions?.[0] || null;
+      const [instances, releaseEvidence] = await Promise.all([
+        loadInstances(session?.id),
+        apiJson("/release/evidence")
+      ]);
+      latestInstances = instances || { instances: [], instance_count: 0, unassigned: {} };
+      renderHealth(summary, latestInstances, releaseEvidence);
+      renderMetrics(summary, latestInstances);
+      renderTabs(latestInstances);
+      renderGlobal(summary, releaseEvidence);
+      renderActiveView();
+    }
+
+    async function act(message, fn) {
+      $("actionLog").textContent = message;
+      try {
+        const result = await fn();
+        $("actionLog").textContent = result?.ok === false ? result.error : JSON.stringify(result);
+      } catch (error) {
+        $("actionLog").textContent = String(error);
+      }
+      await refresh();
+    }
+
+    $("refreshBtn").addEventListener("click", refresh);
+    $("collectTopBtn").addEventListener("click", () => act("collecting evidence...", () => window.widgetBridge.collectEvidence()));
+    $("startApiBtn").addEventListener("click", () => act("checking monitor API...", () => window.widgetBridge.startMonitor()));
+    $("saveWorkspaceBtn").addEventListener("click", () => act("binding workspace...", () => window.widgetBridge.setWorkspacePath($("workspaceInput").value)));
+    $("startSessionBtn").addEventListener("click", () => act("starting session...", () => window.widgetBridge.createSession()));
+    $("endSessionBtn").addEventListener("click", () => { const s = activeSession(); return s ? act("ending session...", () => window.widgetBridge.endSession(s.id)) : ($("actionLog").textContent = "no active session"); });
+    $("collectBtn").addEventListener("click", () => act("collecting evidence...", () => window.widgetBridge.collectEvidence()));
+    $("scanVsCodeBtn").addEventListener("click", () => { const s = activeSession(); return s ? act("scanning VS Code windows...", () => window.widgetBridge.scanVsCode(s.id)) : ($("actionLog").textContent = "start a session first"); });
+    $("ingestBtn").addEventListener("click", () => { const s = activeSession(); return s ? act("ingesting rollout...", () => window.widgetBridge.ingestRollout(s.id)) : ($("actionLog").textContent = "start a session first"); });
+
+    refresh();
+    setInterval(refresh, 4000);
+  </script>
 </body>
 </html>
