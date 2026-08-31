@@ -181,12 +181,12 @@
 
     <div class="metric-row">
       <div class="metric">
-        <div id="primaryLabel" class="label">Codex Primary</div>
+        <div id="primaryLabel" class="label">5-Hour Limit · Used</div>
         <div id="primaryValue" class="value">--</div>
         <div class="bar"><div id="primaryBar" class="bar-fill"></div></div>
       </div>
       <div class="metric">
-        <div id="secondaryLabel" class="label">Codex Secondary</div>
+        <div id="secondaryLabel" class="label">Weekly Limit · Used</div>
         <div id="secondaryValue" class="value">--</div>
         <div class="bar"><div id="secondaryBar" class="bar-fill"></div></div>
       </div>
@@ -242,12 +242,12 @@
       setBarColor(barEl, valueEl, pct);
     }
 
-    function describeWindow(windowData, fallback) {
+    function describePlanLimit(windowData, fallback) {
       const minutes = Number(windowData?.window_minutes);
       if (!Number.isFinite(minutes)) return fallback;
-      if (minutes === 300) return `${fallback} · 5h`;
-      if (minutes === 10080) return `${fallback} · 7d`;
-      return `${fallback} · ${minutes}m`;
+      if (minutes === 300) return "5-Hour Limit · Used";
+      if (minutes === 10080) return "Weekly Limit · Used";
+      return `${fallback} · ${minutes}m window`;
     }
 
     function hasCurrentLimit(summary) {
@@ -273,8 +273,8 @@
 
       const quota = summary.quota || {};
       const rateLimits = summary.timeline?.latest_rate_limits || {};
-      primaryLabel.textContent = describeWindow(rateLimits.primary, "Codex Primary");
-      secondaryLabel.textContent = describeWindow(rateLimits.secondary, "Codex Secondary");
+      primaryLabel.textContent = describePlanLimit(rateLimits.primary, "5-Hour Limit · Used");
+      secondaryLabel.textContent = describePlanLimit(rateLimits.secondary, "Weekly Limit · Used");
 
       if (quota.status === "unknown") {
         statusDot.className = "dot warn";
