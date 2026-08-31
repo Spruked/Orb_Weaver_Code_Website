@@ -22,6 +22,7 @@ import codex
 import correlation
 import release_evidence
 import vscode_logs
+import window_instances
 
 DATA_DIR = Path(
     os.environ.get(
@@ -31,6 +32,7 @@ DATA_DIR = Path(
 )
 
 storage = Storage(DATA_DIR)
+window_instances.ensure_schema(storage)
 app = FastAPI(title="Code Weaver Runtime API")
 app.add_middleware(
     CORSMiddleware,
@@ -86,12 +88,17 @@ def _session_or_none(session_id: str):
 
 @app.get("/health")
 def health():
+    active = storage.active_runtime_session()
+    instance_count = 0
+    if active:
+        instance_count = len(window_instances.list_instances(storage, active["id"], active_only=True))
     return {
         "ok": True,
         "service": "code-weaver-runtime",
         "data_dir": str(DATA_DIR),
         "vault_mirror": "degraded" if storage.evidence.last_vault_error else "ok",
         "vault_error": storage.evidence.last_vault_error,
+        "active_window_instances": instance_count,
     }
 
 
@@ -137,6 +144,7 @@ def start_vscode_window(
         window_identifier=window_identifier,
         focus_state=focus_state,
     )
+    window = window_instances.decorate_registered_instance(storage, window)
     return window or {"error": "not found"}
 
 
@@ -144,8 +152,30 @@ def start_vscode_window(
 def list_vscode_windows(session_id: str, active_only: bool = False):
     if _session_or_none(session_id) is None:
         return {"error": "not found"}
-    windows = storage.list_vscode_windows(session_id, active_only=active_only)
+    windows = window_instances.list_instances(storage, session_id, active_only=active_only)
     return {"windows": windows, "count": len(windows)}
+
+
+@app.get("/runtime/session/{session_id}/instances")
+def code_weaver_window_instances(session_id: str):
+    if _session_or_none(session_id) is None:
+        return {"error": "not found"}
+    return window_instances.instance_summary(storage, session_id)
+
+
+@app.post("/runtime/vscode-windows/{window_id}/bind-log")
+def bind_vscode_window_log(
+    window_id: str,
+    log_session_dir: str,
+    evidence_class: str = "derived",
+):
+    window = window_instances.bind_log_session(
+        storage,
+        window_id,
+        log_session_dir,
+        evidence_class=evidence_class,
+    )
+    return window or {"error": "not found or log session already bound"}
 
 
 @app.post("/runtime/vscode-windows/{window_id}/close")
@@ -249,7 +279,6 @@ def git_state(session_id: str):
 
 @app.get("/release/evidence")
 def verified_release_evidence():
-    """Read-only verification of the most recent explicitly sealed release file."""
     return release_evidence.read_verified_release_evidence()
 
 
@@ -284,6 +313,20 @@ def timeline(session_id: Optional[str] = None, limit: int = 200):
     return correlation.build_timeline(events, limit=limit)
 
 
+def _instance_log_paths(session_id: str) -> list[Path]:
+    paths: dict[str, Path] = {}
+    for instance in window_instances.list_instances(storage, session_id, active_only=True):
+        log_dir = instance.get("log_session_dir")
+        if not log_dir:
+            continue
+        for log_path in codex.find_codex_extension_logs(Path(log_dir)):
+            paths[str(log_path)] = log_path
+    if not paths:
+        for log_path in codex.find_codex_extension_logs():
+            paths[str(log_path)] = log_path
+    return list(paths.values())
+
+
 @app.post("/vscode/scan/{session_id}")
 def vscode_scan(session_id: str):
     session = _session_or_none(session_id)
@@ -291,8 +334,9 @@ def vscode_scan(session_id: str):
         return {"error": "not found"}
     ended_before = session["ended_at"] or codex.now_iso()
     new_dirs = vscode_logs.record_new_sessions(storage.evidence, session_id, DATA_DIR)
+    discovered = window_instances.discover_recent_instances(storage, session_id)
     reset_hits = []
-    for log_path in codex.find_codex_extension_logs():
+    for log_path in _instance_log_paths(session_id):
         reset_hits += vscode_logs.scan_codex_log_for_resets(
             log_path,
             storage.evidence,
@@ -301,7 +345,12 @@ def vscode_scan(session_id: str):
             started_after=session["started_at"],
             ended_before=ended_before,
         )
-    return {"new_log_dirs": new_dirs, "ipc_events": reset_hits}
+    return {
+        "new_log_dirs": new_dirs,
+        "ipc_events": reset_hits,
+        "discovered_window_instances": discovered,
+        "instances": window_instances.instance_summary(storage, session_id),
+    }
 
 
 if __name__ == "__main__":
