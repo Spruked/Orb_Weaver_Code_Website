@@ -3,6 +3,73 @@
 This file preserves working context for future restarts, crashes, or handoffs.
 Keep it current whenever a meaningful implementation or verification boundary changes.
 
+## 2026-08-31 — GitHub hardening pass
+
+### Completed
+
+- Corrected the corner widget quota labels to **5-Hour Limit · Used** and **Weekly Limit · Used** instead of ambiguous Primary/Secondary presentation.
+- Hardened `session_monitor/evidence.py` for long-running sessions:
+  - streaming JSONL reads instead of loading the full combined evidence file;
+  - cached per-session source-record hashes for duplicate suppression;
+  - thread-safe append operations;
+  - optional fsync mode;
+  - tolerance for a truncated final JSONL line after a crash;
+  - vault mirror failures no longer break the primary evidence write.
+- Hardened `session_monitor/correlation.py`:
+  - shared plan-limit terminology;
+  - explicit USED semantics and DERIVED remaining percentages;
+  - token attribution stays OBSERVED when a token record carries a turn ID;
+  - a missing turn ID is only DERIVED when the nearest turn-bearing records before and after it in the same rollout source carry the same turn ID;
+  - one-sided/timing guesses remain UNATTRIBUTED;
+  - session statistics are calculated over the full session while only the requested tail is displayed.
+- Hardened `session_monitor/vault_bridge.py`:
+  - stopped rewriting the vault runtime manifest for every evidence event;
+  - stopped rereading `glyph_map.json` for every evidence event;
+  - cached runtime/glyph state;
+  - serialized vault writes;
+  - added optional fsync mode.
+- Added reproducible release/source evidence sealing:
+  - `scripts/seal-code-weaver-release.py` records exact HEAD, branch, dirty state, tracked-file source manifest hash, explicit artifact hashes/sizes, canonical payload hash, and a file-hash sidecar;
+  - a dirty source tree cannot be promoted to a clean sealed release;
+  - missing artifacts remain unavailable.
+- Added `session_monitor/release_evidence.py` and read-only `GET /release/evidence` verification.
+  - verifies the seal sidecar and canonical payload;
+  - compares sealed HEAD to current HEAD;
+  - verifies explicitly supplied artifact hashes;
+  - reports verification failures/mismatches instead of reconciling them.
+- Updated `session_monitor/server.py`:
+  - `/codex/quota` now preserves raw provider fields and also exposes explicit shared `five_hour` and `weekly` objects;
+  - remaining percentages are labeled DERIVED;
+  - health exposes vault mirror degradation;
+  - `/release/evidence` exposes verified sealed evidence.
+- Added `scripts/install-code-weaver.sh` as the supported one-command local installer.
+  - detects the repository path dynamically;
+  - generates persistent user-level monitor and widget services;
+  - starts the monitor before the widget and checks health;
+  - installs `~/.local/bin/code-weaver-code`;
+  - refuses to fetch missing runtime dependencies from the network;
+  - resolves the actual local Python/npm executable paths rather than assuming `/usr/bin`.
+- Updated `scripts/code-weaver-vscode-session.sh` to be path-portable and to use the requested workspace/current directory.
+- Added `session_monitor/stress_evidence_test.py` to exercise sustained writes, concurrent writers, hash caching, streaming tails, truncated-tail recovery, and vault mirror counts.
+- Added `CODE_WEAVER_LAUNCH.md` with the install, tracked-window, lifecycle proof, stress proof, quota semantics, and release-sealing procedures.
+
+### Not Yet Proven On The User Machine
+
+- The new GitHub hardening pass must still be pulled locally and run through:
+  - Python syntax/import checks;
+  - `runtime_lifecycle_test.py`;
+  - `stress_evidence_test.py`;
+  - the one-command installer;
+  - actual monitor/widget restart behavior.
+- The Electron full dashboard still contains legacy Primary/Secondary wording in some fields; the corner widget is corrected and the API semantics are corrected. Dashboard presentation cleanup must not change the evidence semantics.
+- The release verifier is available through the API; the control-plane display still needs to prefer verified `/release/evidence` over the legacy placeholder manifest when a seal exists.
+
+### Separate / Still Paused
+
+- Do not resume Chrome DevTools MCP repair in this workstream.
+- `tools/chrome-devtools-mcp` remains `PRESENT_NOT_PROVEN`.
+- `tools/mcp_server` and `tools/visidata` remain required/pending.
+
 ## 2026-08-31 06:05:56 -0500
 
 ### Completed
@@ -135,17 +202,7 @@ front_end/third_party/acorn/package/dist/acorn.mjs
 
 ### Next Safe Steps
 
-1. Stabilize and review the current vault/session-lifecycle patch as its own change set.
-2. Runtime-test the Session Monitor service:
-   - health endpoint
-   - `POST /sessions`
-   - vault mirror output in `code_weaver_vault/runtime`
-   - explicit `POST /sessions/{id}/end`
-   - stale-session autosave on monitor restart
-3. Repair Chrome DevTools MCP in a separate toolchain change set.
-   - Determine why `third_party/devtools-frontend` is incomplete.
-   - Vendor the complete required payload during controlled build/release preparation.
-   - Build locally.
-   - Prove runtime launches from an explicit local path with no network acquisition.
-   - Only then promote Chrome DevTools MCP from `PRESENT_NOT_PROVEN` to `PROVEN_RUNNING`.
+1. Pull the GitHub hardening pass and run the launch runbook tests.
+2. Keep Chrome DevTools MCP repair separate.
+3. After the runtime tests pass, finish the remaining Electron dashboard presentation wiring for verified release evidence and shared-plan labels.
 4. Implement or vendor the still-required `tools/mcp_server` and `tools/visidata` paths as separate evidence/toolchain work.
