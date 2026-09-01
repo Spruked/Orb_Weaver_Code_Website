@@ -1,12 +1,18 @@
 """Per-window Code Weaver instance model.
 
 The runtime session is the parent control plane. Each VS Code window is a child
-instance. Shared plan-limit evidence remains parent/account-level. Evidence is
-attached to a child only when a defensible identity link exists.
+instance. Under VS Code Remote WSL, one timestamped server-log directory can
+contain multiple windows; each window is represented by its own ``exthostN``
+subdirectory. Therefore the evidence anchor for a child instance is the
+``exthostN`` directory, not the outer server-log directory.
+
+Shared plan-limit evidence remains parent/account-level. Evidence is attached
+to a child only when a defensible identity link exists.
 """
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -18,7 +24,7 @@ import correlation
 import vscode_logs
 from evidence import EvidenceEvent, now_iso
 
-INSTANCE_VERSION = "window-instance-0.1"
+INSTANCE_VERSION = "window-instance-0.2"
 
 
 def _ensure_column(conn: sqlite3.Connection, column: str, definition: str) -> None:
@@ -58,6 +64,41 @@ def _parse_iso(value: Optional[str]) -> Optional[datetime]:
 
 def _iso_from_mtime(value: float) -> str:
     return datetime.fromtimestamp(value, tz=timezone.utc).isoformat()
+
+
+def _is_exthost_dir(path: Path) -> bool:
+    return path.is_dir() and path.name.startswith("exthost")
+
+
+def _extension_host_dirs() -> list[Path]:
+    """Enumerate VS Code Remote WSL child-window evidence anchors.
+
+    A timestamped server directory is shared by multiple VS Code windows.
+    ``exthostN`` beneath that directory is the granularity at which Codex and
+    extension-host logs become window-specific.
+    """
+    hosts: list[Path] = []
+    for server_dir in vscode_logs.list_session_dirs():
+        try:
+            children = sorted(server_dir.glob("exthost*"), key=lambda p: p.name)
+        except OSError:
+            continue
+        hosts.extend(path for path in children if _is_exthost_dir(path))
+    return hosts
+
+
+def _anchor_identity(path: Path) -> str:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path
+    return f"{resolved.parent.name}/{resolved.name}"
+
+
+def _stable_log_window_id(path: Path) -> str:
+    identity = str(path.expanduser().resolve())
+    digest = hashlib.sha256(identity.encode("utf-8", errors="replace")).hexdigest()[:16]
+    return f"log-{digest}"
 
 
 def get_instance(storage, window_id: str) -> Optional[dict]:
@@ -108,13 +149,17 @@ def bind_log_session(
     log_session_dir: str,
     evidence_class: str = "derived",
 ) -> Optional[dict]:
+    """Bind a child Code Weaver instance to one VS Code ``exthostN`` anchor."""
     ensure_schema(storage)
     if evidence_class not in {"observed", "derived", "inferred"}:
         evidence_class = "inferred"
     window = get_instance(storage, window_id)
     if window is None:
         return None
-    log_path = str(Path(log_session_dir).expanduser().resolve())
+    candidate = Path(log_session_dir).expanduser().resolve()
+    if not _is_exthost_dir(candidate):
+        return None
+    log_path = str(candidate)
     observed_at = now_iso()
     with sqlite3.connect(storage.db_path) as conn:
         conflict = conn.execute(
@@ -136,7 +181,7 @@ def bind_log_session(
                 evidence_class,
                 observed_at,
                 observed_at,
-                _workspace_label(window.get("workspace_path"), Path(log_path).name),
+                _workspace_label(window.get("workspace_path"), _anchor_identity(candidate)),
                 window_id,
             ),
         )
@@ -145,14 +190,15 @@ def bind_log_session(
         EvidenceEvent(
             session_id=window["runtime_session_id"],
             category="vscode_window",
-            event_type="window_log_session_bound",
+            event_type="window_exthost_bound",
             source="window_instances",
             source_identifier=log_path,
             evidence_class=evidence_class,
             parser_version=INSTANCE_VERSION,
             data={
                 "child_window_id": window_id,
-                "log_session_dir": log_path,
+                "extension_host_dir": log_path,
+                "server_log_dir": str(candidate.parent),
                 "association": evidence_class,
             },
             timestamp=observed_at,
@@ -161,21 +207,29 @@ def bind_log_session(
     return get_instance(storage, window_id)
 
 
-def _latest_log_activity(session_dir: Path) -> Optional[float]:
+def _latest_log_activity(anchor: Path) -> Optional[float]:
+    """Return latest activity for one extension host, not the shared parent."""
     mtimes: list[float] = []
-    for path in codex.find_codex_extension_logs(session_dir) + codex.find_codex_stats_logs(session_dir):
+    if _is_exthost_dir(anchor):
+        paths = list(anchor.glob("openai.chatgpt/Codex.log"))
+        paths += list(anchor.glob("output_logging_*/*Codex Stats.log"))
+        paths += list(anchor.glob("*Codex Stats.log"))
+    else:
+        paths = codex.find_codex_extension_logs(anchor) + codex.find_codex_stats_logs(anchor)
+    for path in paths:
         try:
             mtimes.append(path.stat().st_mtime)
         except OSError:
             pass
     try:
-        mtimes.append(session_dir.stat().st_mtime)
+        mtimes.append(anchor.stat().st_mtime)
     except OSError:
         pass
     return max(mtimes) if mtimes else None
 
 
 def _unbound_log_dirs(storage, runtime_session_id: str, max_age_seconds: int) -> list[tuple[Path, float]]:
+    """Return unbound active-looking ``exthostN`` directories."""
     now = time.time()
     bound = {
         str(Path(row["log_session_dir"]).resolve())
@@ -183,18 +237,19 @@ def _unbound_log_dirs(storage, runtime_session_id: str, max_age_seconds: int) ->
         if row.get("log_session_dir")
     }
     candidates: list[tuple[Path, float]] = []
-    for directory in vscode_logs.list_session_dirs():
+    for directory in _extension_host_dirs():
         activity = _latest_log_activity(directory)
         if activity is None or now - activity > max_age_seconds:
             continue
-        if str(directory.resolve()) in bound:
+        resolved = str(directory.resolve())
+        if resolved in bound:
             continue
         candidates.append((directory, activity))
     return sorted(candidates, key=lambda item: item[1], reverse=True)
 
 
 def _auto_bind_registered(storage, runtime_session_id: str, max_age_seconds: int = 900) -> int:
-    """Derive a log binding only when one unique close-time candidate exists."""
+    """Derive an exthost binding only when one unique close-time candidate exists."""
     candidates = _unbound_log_dirs(storage, runtime_session_id, max_age_seconds)
     if not candidates:
         return 0
@@ -233,12 +288,14 @@ def discover_recent_instances(
     storage,
     runtime_session_id: str,
     max_age_seconds: int = 1800,
-    max_instances: int = 8,
+    max_instances: int = 16,
 ) -> list[dict]:
-    """Discover active-looking VS Code log sessions as transparent INFERRED children.
+    """Discover active-looking ``exthostN`` anchors as transparent children.
 
-    This catches windows that were already open before the tracked launcher was
-    installed. They remain INFERRED until a stronger identity binding exists.
+    This catches windows already open before the tracked launcher was installed.
+    Because the inference comes from filesystem/log topology rather than a
+    documented VS Code window API, those identities remain INFERRED until a
+    stronger launcher/session binding exists.
     """
     ensure_schema(storage)
     _auto_bind_registered(storage, runtime_session_id)
@@ -250,11 +307,12 @@ def discover_recent_instances(
     candidates = _unbound_log_dirs(storage, runtime_session_id, max_age_seconds)
     created: list[dict] = []
     for directory, activity in candidates[:max_instances]:
-        identifier = f"vscode-log:{directory.name}"
+        anchor_name = _anchor_identity(directory)
+        identifier = f"vscode-exthost:{anchor_name}"
         if identifier in known_identifiers:
             continue
         started_at = _iso_from_mtime(activity)
-        window_id = f"log-{directory.name}"
+        window_id = _stable_log_window_id(directory)
         with sqlite3.connect(storage.db_path) as conn:
             duplicate = conn.execute("SELECT id FROM vscode_windows WHERE id = ?", (window_id,)).fetchone()
             if duplicate is not None:
@@ -274,11 +332,11 @@ def discover_recent_instances(
                     window_id,
                     runtime_session_id,
                     None,
-                    "vscode_log_discovery",
+                    "vscode_exthost_discovery",
                     started_at,
                     identifier,
                     started_at,
-                    f"Detected {directory.name}",
+                    f"Detected {anchor_name}",
                     str(directory.resolve()),
                     now_iso(),
                 ),
@@ -288,16 +346,17 @@ def discover_recent_instances(
             EvidenceEvent(
                 session_id=runtime_session_id,
                 category="vscode_window",
-                event_type="window_inferred_from_log_session",
+                event_type="window_inferred_from_exthost",
                 source="window_instances",
                 source_identifier=str(directory),
                 evidence_class="inferred",
                 parser_version=INSTANCE_VERSION,
                 data={
                     "child_window_id": window_id,
-                    "log_session_dir": str(directory),
+                    "extension_host_dir": str(directory),
+                    "server_log_dir": str(directory.parent),
                     "workspace_path": None,
-                    "identity_note": "Active-looking VS Code log session; workspace/window identity not yet authoritative",
+                    "identity_note": "Active-looking VS Code exthost; window identity is inferred from Remote WSL log topology",
                 },
                 timestamp=started_at,
             )
@@ -355,6 +414,8 @@ def instance_summary(storage, runtime_session_id: str) -> dict:
         summaries.append({
             **instance,
             "instance_label": instance.get("instance_label") or _workspace_label(instance.get("workspace_path"), "VS Code"),
+            "server_log_dir": str(Path(instance["log_session_dir"]).parent) if instance.get("log_session_dir") else None,
+            "extension_host": Path(instance["log_session_dir"]).name if instance.get("log_session_dir") else None,
             "event_count": len(child_events),
             "ipc_event_count": sum(1 for event in child_events if event.get("event_type") == "ipc_event"),
             "reload_signal_count": sum(1 for event in child_events if event.get("event_type") == "new_log_session_dir"),
