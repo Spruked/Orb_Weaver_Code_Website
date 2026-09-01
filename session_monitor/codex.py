@@ -63,7 +63,9 @@ def find_codex_stats_logs(session_dir: Optional[Path] = None) -> list[Path]:
     root = session_dir or find_latest_vscode_session_dir()
     if root is None:
         return []
-    hits = list(root.glob("exthost*/output_logging_*/*Codex Stats.log"))
+    hits = list(root.glob("output_logging_*/*Codex Stats.log"))
+    hits += list(root.glob("*Codex Stats.log"))
+    hits += list(root.glob("exthost*/output_logging_*/*Codex Stats.log"))
     hits += list(root.glob("exthost*/*Codex Stats.log"))
     # De-duplicate paths while preserving newest-first ordering.
     unique = {str(p): p for p in hits}
@@ -74,7 +76,8 @@ def find_codex_extension_logs(session_dir: Optional[Path] = None) -> list[Path]:
     root = session_dir or find_latest_vscode_session_dir()
     if root is None:
         return []
-    hits = list(root.glob("exthost*/openai.chatgpt/Codex.log"))
+    hits = list(root.glob("openai.chatgpt/Codex.log"))
+    hits += list(root.glob("exthost*/openai.chatgpt/Codex.log"))
     return sorted(hits, key=lambda p: p.stat().st_mtime, reverse=True)
 
 

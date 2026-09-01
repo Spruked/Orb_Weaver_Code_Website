@@ -95,9 +95,11 @@ def _anchor_identity(path: Path) -> str:
     return f"{resolved.parent.name}/{resolved.name}"
 
 
-def _stable_log_window_id(path: Path) -> str:
+def _stable_log_window_id(runtime_session_id: str, path: Path) -> str:
     identity = str(path.expanduser().resolve())
-    digest = hashlib.sha256(identity.encode("utf-8", errors="replace")).hexdigest()[:16]
+    digest = hashlib.sha256(
+        f"{runtime_session_id}\0{identity}".encode("utf-8", errors="replace")
+    ).hexdigest()[:16]
     return f"log-{digest}"
 
 
@@ -119,6 +121,14 @@ def list_instances(storage, runtime_session_id: str, active_only: bool = False) 
     with sqlite3.connect(storage.db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+
+def _all_instances(storage) -> list[dict]:
+    ensure_schema(storage)
+    with sqlite3.connect(storage.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM vscode_windows ORDER BY started_at").fetchall()
         return [dict(row) for row in rows]
 
 
@@ -248,6 +258,104 @@ def _unbound_log_dirs(storage, runtime_session_id: str, max_age_seconds: int) ->
     return sorted(candidates, key=lambda item: item[1], reverse=True)
 
 
+def _is_outer_server_log_dir(path: Path) -> bool:
+    if _is_exthost_dir(path):
+        return False
+    try:
+        return any(_is_exthost_dir(child) for child in path.glob("exthost*"))
+    except OSError:
+        return False
+
+
+def reconcile_legacy_outer_log_bindings(storage, runtime_session_id: Optional[str] = None) -> dict:
+    """Retire or unbind legacy rows that point at the shared server log dir.
+
+    Historical evidence is preserved. Inferred child rows are closed because
+    the outer directory is not a child window. Launcher-created rows keep their
+    window identity but lose the incorrect outer binding until an exthost can
+    be associated defensibly.
+    """
+    ensure_schema(storage)
+    rows = list_instances(storage, runtime_session_id) if runtime_session_id else _all_instances(storage)
+    retired = 0
+    unbound = 0
+    observed_at = now_iso()
+    with sqlite3.connect(storage.db_path) as conn:
+        for row in rows:
+            log_dir = row.get("log_session_dir")
+            if not log_dir:
+                continue
+            try:
+                path = Path(log_dir).expanduser().resolve()
+            except OSError:
+                continue
+            if not _is_outer_server_log_dir(path):
+                continue
+
+            if row.get("source") == "vscode_log_discovery":
+                if row.get("ended_at") is not None:
+                    continue
+                conn.execute(
+                    """
+                    UPDATE vscode_windows
+                    SET ended_at = ?, status = 'closed',
+                        close_reason = 'legacy_outer_server_log_dir_retired',
+                        last_observed_at = ?
+                    WHERE id = ? AND ended_at IS NULL
+                    """,
+                    (observed_at, observed_at, row["id"]),
+                )
+                retired += 1
+                storage.evidence.append(
+                    EvidenceEvent(
+                        session_id=row["runtime_session_id"],
+                        category="vscode_window",
+                        event_type="legacy_outer_window_retired",
+                        source="window_instances",
+                        source_identifier=str(path),
+                        evidence_class="inferred",
+                        parser_version=INSTANCE_VERSION,
+                        data={
+                            "child_window_id": row["id"],
+                            "legacy_log_session_dir": str(path),
+                            "reason": "Outer VS Code server log directory is a shared parent, not a child window evidence anchor",
+                        },
+                        timestamp=observed_at,
+                    )
+                )
+                continue
+
+            conn.execute(
+                """
+                UPDATE vscode_windows
+                SET log_session_dir = NULL, identity_evidence_class = 'inferred',
+                    last_observed_at = ?
+                WHERE id = ?
+                """,
+                (observed_at, row["id"]),
+            )
+            unbound += 1
+            storage.evidence.append(
+                EvidenceEvent(
+                    session_id=row["runtime_session_id"],
+                    category="vscode_window",
+                    event_type="legacy_outer_log_binding_removed",
+                    source="window_instances",
+                    source_identifier=str(path),
+                    evidence_class="derived",
+                    parser_version=INSTANCE_VERSION,
+                    data={
+                        "child_window_id": row["id"],
+                        "legacy_log_session_dir": str(path),
+                        "reason": "Launcher-created window kept, but incorrect shared outer log binding was removed",
+                    },
+                    timestamp=observed_at,
+                )
+            )
+        conn.commit()
+    return {"retired": retired, "unbound": unbound}
+
+
 def _auto_bind_registered(storage, runtime_session_id: str, max_age_seconds: int = 900) -> int:
     """Derive an exthost binding only when one unique close-time candidate exists."""
     candidates = _unbound_log_dirs(storage, runtime_session_id, max_age_seconds)
@@ -298,6 +406,7 @@ def discover_recent_instances(
     stronger launcher/session binding exists.
     """
     ensure_schema(storage)
+    reconcile_legacy_outer_log_bindings(storage, runtime_session_id)
     _auto_bind_registered(storage, runtime_session_id)
     session = storage.get_session(runtime_session_id)
     if session is None:
@@ -312,7 +421,7 @@ def discover_recent_instances(
         if identifier in known_identifiers:
             continue
         started_at = _iso_from_mtime(activity)
-        window_id = _stable_log_window_id(directory)
+        window_id = _stable_log_window_id(runtime_session_id, directory)
         with sqlite3.connect(storage.db_path) as conn:
             duplicate = conn.execute("SELECT id FROM vscode_windows WHERE id = ?", (window_id,)).fetchone()
             if duplicate is not None:

@@ -41,10 +41,16 @@ DEFAULT_WORKSPACE_PATH = Path(
 
 storage = Storage(DATA_DIR)
 window_instances.ensure_schema(storage)
+window_instances.reconcile_legacy_outer_log_bindings(storage)
 app = FastAPI(title="Code Weaver Runtime API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
+    allow_origins=[
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+        "http://127.0.0.1:41000",
+        "http://localhost:41000",
+    ],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )

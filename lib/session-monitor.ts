@@ -144,7 +144,6 @@ async function readMonitorJson<T>(apiUrl: string, path: string): Promise<T | nul
   try {
     const response = await fetch(`${apiUrl}${path}`, {
       cache: "no-store",
-      next: { revalidate: 0 },
     });
 
     if (!response.ok) {

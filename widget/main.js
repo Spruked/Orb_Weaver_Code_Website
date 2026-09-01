@@ -5,7 +5,7 @@ const fs = require("fs");
 
 // --- Config -----------------------------------------------------------
 const DEFAULT_API_BASE = "http://127.0.0.1:18441";
-const DEFAULT_DASHBOARD_URL = "http://127.0.0.1:3000/session-monitor";
+const DEFAULT_DASHBOARD_URL = "http://127.0.0.1:41000/session-monitor";
 const DEFAULT_WORKSPACE_PATH = path.resolve(__dirname, "..");
 const SETTINGS_PATH = path.join(app.getPath("userData"), "widget-settings.json");
 const WIDGET_WIDTH = 360;
