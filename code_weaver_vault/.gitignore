@@ -20,3 +20,6 @@ secrets.json
 # Temporary
 temp/
 *.tmp
+
+# Generated Code Weaver runtime evidence
+runtime/
