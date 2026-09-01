@@ -25,6 +25,7 @@ import correlation
 import release_evidence
 import vscode_logs
 import window_instances
+import windows_desktop
 
 DATA_DIR = Path(
     os.environ.get(
@@ -41,6 +42,7 @@ DEFAULT_WORKSPACE_PATH = Path(
 
 storage = Storage(DATA_DIR)
 window_instances.ensure_schema(storage)
+windows_desktop.ensure_schema(storage)
 window_instances.reconcile_legacy_outer_log_bindings(storage)
 app = FastAPI(title="Code Weaver Runtime API")
 app.add_middleware(
@@ -54,6 +56,8 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+ANCHOR_SOURCES = {"vscode_exthost_discovery", "vscode_log_discovery"}
 
 
 def _number(value):
@@ -122,6 +126,80 @@ def _session_or_none(session_id: str):
     return storage.get_session(session_id)
 
 
+def _anchor_token_count(anchor: dict) -> int:
+    token = anchor.get("token_usage_summary") or {}
+    return int(token.get("attributed_last_usage_turn_count") or 0) + int(
+        token.get("unattributed_last_usage_record_count") or 0
+    )
+
+
+def _control_plane_instances(session_id: str) -> dict:
+    """Return actual window tabs separately from unbound exthost evidence.
+
+    ``window_instances.instance_summary`` still calculates evidence against all
+    persisted rows for backward compatibility.  Here we enforce the user-facing
+    ontology: a Remote WSL exthost is an evidence anchor, not proof of a visible
+    VS Code window.
+    """
+    raw = window_instances.instance_summary(storage, session_id)
+    rows = raw.get("instances") or []
+    anchors = [row for row in rows if row.get("source") in ANCHOR_SOURCES and not row.get("ended_at")]
+    windows = [
+        row
+        for row in rows
+        if row.get("source") not in ANCHOR_SOURCES
+        and row.get("ended_at") is None
+        and row.get("status") == "active"
+    ]
+    closed_windows = [
+        row
+        for row in rows
+        if row.get("source") not in ANCHOR_SOURCES
+        and (row.get("ended_at") is not None or row.get("status") != "active")
+    ]
+
+    unassigned = dict(raw.get("unassigned") or {})
+    unassigned["event_count"] = int(unassigned.get("event_count") or 0) + sum(
+        int(anchor.get("event_count") or 0) for anchor in anchors
+    )
+    unassigned["rollout_event_count"] = int(unassigned.get("rollout_event_count") or 0) + sum(
+        int(anchor.get("rollout_event_count") or 0) for anchor in anchors
+    )
+    unassigned["token_count"] = int(unassigned.get("token_count") or 0) + sum(
+        _anchor_token_count(anchor) for anchor in anchors
+    )
+    unassigned["extension_host_anchor_count"] = len(anchors)
+    unassigned["extension_host_anchors"] = [
+        {
+            "id": anchor.get("id"),
+            "server_log_dir": anchor.get("server_log_dir"),
+            "extension_host": anchor.get("extension_host"),
+            "extension_host_dir": anchor.get("log_session_dir"),
+            "identity_evidence_class": anchor.get("identity_evidence_class") or "inferred",
+            "latest_activity_at": anchor.get("latest_activity_at") or anchor.get("last_observed_at"),
+            "event_count": anchor.get("event_count") or 0,
+            "rollout_event_count": anchor.get("rollout_event_count") or 0,
+            "token_count": _anchor_token_count(anchor),
+        }
+        for anchor in anchors
+    ]
+    unassigned["note"] = (
+        "Unbound exthostN directories are extension-host evidence anchors, not visible-window identities. "
+        "They stay here until Code Weaver can defensibly bind them to an observed VS Code window."
+    )
+
+    return {
+        **raw,
+        "instances": windows,
+        "instance_count": len(windows),
+        "closed_instances": closed_windows,
+        "closed_instance_count": len(closed_windows),
+        "extension_host_anchors": unassigned["extension_host_anchors"],
+        "extension_host_anchor_count": len(anchors),
+        "unassigned": unassigned,
+    }
+
+
 def _bootstrap_runtime() -> dict:
     """Guarantee one parent runtime exists whenever the monitor service starts.
 
@@ -144,9 +222,17 @@ _bootstrap_runtime()
 @app.get("/health")
 def health():
     active = storage.active_runtime_session()
-    instance_count = 0
+    window_count = 0
+    anchor_count = 0
     if active:
-        instance_count = len(window_instances.list_instances(storage, active["id"], active_only=True))
+        window_count = len(windows_desktop.visible_window_rows(storage, active["id"], active_only=True))
+        anchor_count = len(
+            [
+                row
+                for row in window_instances.list_instances(storage, active["id"], active_only=True)
+                if row.get("source") in ANCHOR_SOURCES
+            ]
+        )
     return {
         "ok": True,
         "service": "code-weaver-runtime",
@@ -155,7 +241,8 @@ def health():
         "vault_error": storage.evidence.last_vault_error,
         "runtime_session_id": active.get("id") if active else None,
         "runtime_status": active.get("status") if active else "none",
-        "active_window_instances": instance_count,
+        "active_window_instances": window_count,
+        "active_extension_host_anchors": anchor_count,
     }
 
 
@@ -216,7 +303,7 @@ def start_vscode_window(
 def list_vscode_windows(session_id: str, active_only: bool = False):
     if _session_or_none(session_id) is None:
         return {"error": "not found"}
-    windows = window_instances.list_instances(storage, session_id, active_only=active_only)
+    windows = windows_desktop.visible_window_rows(storage, session_id, active_only=active_only)
     return {"windows": windows, "count": len(windows)}
 
 
@@ -224,7 +311,15 @@ def list_vscode_windows(session_id: str, active_only: bool = False):
 def code_weaver_window_instances(session_id: str):
     if _session_or_none(session_id) is None:
         return {"error": "not found"}
-    return window_instances.instance_summary(storage, session_id)
+    return _control_plane_instances(session_id)
+
+
+@app.post("/runtime/session/{session_id}/desktop-windows/observe")
+def observe_desktop_windows(session_id: str):
+    if _session_or_none(session_id) is None:
+        return {"error": "not found"}
+    probe = windows_desktop.reconcile_visible_windows(storage, session_id)
+    return {"desktop": probe, "instances": _control_plane_instances(session_id)}
 
 
 @app.post("/runtime/vscode-windows/{window_id}/bind-log")
@@ -239,7 +334,7 @@ def bind_vscode_window_log(
         log_session_dir,
         evidence_class=evidence_class,
     )
-    return window or {"error": "not found or log session already bound"}
+    return window or {"error": "not found or extension-host anchor already bound"}
 
 
 @app.post("/runtime/vscode-windows/{window_id}/close")
@@ -398,7 +493,8 @@ def vscode_scan(session_id: str):
         return {"error": "not found"}
     ended_before = session["ended_at"] or codex.now_iso()
     new_dirs = vscode_logs.record_new_sessions(storage.evidence, session_id, DATA_DIR)
-    discovered = window_instances.discover_recent_instances(storage, session_id)
+    discovered_anchors = window_instances.discover_recent_instances(storage, session_id)
+    desktop = windows_desktop.reconcile_visible_windows(storage, session_id)
     reset_hits = []
     for log_path in _instance_log_paths(session_id):
         reset_hits += vscode_logs.scan_codex_log_for_resets(
@@ -412,8 +508,9 @@ def vscode_scan(session_id: str):
     return {
         "new_log_dirs": new_dirs,
         "ipc_events": reset_hits,
-        "discovered_window_instances": discovered,
-        "instances": window_instances.instance_summary(storage, session_id),
+        "desktop_windows": desktop,
+        "discovered_extension_host_anchors": discovered_anchors,
+        "instances": _control_plane_instances(session_id),
     }
 
 
