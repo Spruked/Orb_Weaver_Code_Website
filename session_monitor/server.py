@@ -4,12 +4,14 @@ server.py
 Local HTTP API for the Code Weaver Session Monitor control plane.
 
 Read endpoints are side-effect free. Evidence enters the append-only ledger
-only through explicit session/observation/ingestion actions.
+only through explicit session/observation/ingestion actions or the monitor
+service's own startup lifecycle.
 """
 
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -30,6 +32,12 @@ DATA_DIR = Path(
         Path.home() / ".local" / "share" / "code-weaver-runtime",
     )
 )
+DEFAULT_WORKSPACE_PATH = Path(
+    os.environ.get(
+        "CODE_WEAVER_WORKSPACE_PATH",
+        Path(__file__).resolve().parents[1],
+    )
+).resolve()
 
 storage = Storage(DATA_DIR)
 window_instances.ensure_schema(storage)
@@ -52,6 +60,28 @@ def _number(value):
 def _remaining_from_used(value):
     used = _number(value)
     return 100.0 - used if used is not None else None
+
+
+def _parse_iso(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _runtime_is_recent(session: Optional[dict], max_age_seconds: int = 120) -> bool:
+    if not session:
+        return False
+    observed = _parse_iso(session.get("last_observed_at") or session.get("started_at"))
+    if observed is None:
+        return False
+    age = (datetime.now(timezone.utc) - observed).total_seconds()
+    return age <= max_age_seconds
 
 
 def _latest_quota() -> dict:
@@ -86,6 +116,25 @@ def _session_or_none(session_id: str):
     return storage.get_session(session_id)
 
 
+def _bootstrap_runtime() -> dict:
+    """Guarantee one parent runtime exists whenever the monitor service starts.
+
+    Storage already marks any abandoned runtime from a previous monitor process
+    unclean during Storage initialization. The new process then owns a fresh
+    runtime immediately, independent of whether Electron wins or loses a
+    desktop-startup race.
+    """
+    record = storage.ensure_runtime_session(str(DEFAULT_WORKSPACE_PATH))
+    vscode_logs.baseline_session_dirs(DATA_DIR)
+    codex.read_current_quota(storage.evidence, record["id"])
+    return record
+
+
+# The monitor service owns the parent runtime lifecycle. Electron may attach to
+# it, but a widget startup failure must never leave Code Weaver without a parent.
+_bootstrap_runtime()
+
+
 @app.get("/health")
 def health():
     active = storage.active_runtime_session()
@@ -98,6 +147,8 @@ def health():
         "data_dir": str(DATA_DIR),
         "vault_mirror": "degraded" if storage.evidence.last_vault_error else "ok",
         "vault_error": storage.evidence.last_vault_error,
+        "runtime_session_id": active.get("id") if active else None,
+        "runtime_status": active.get("status") if active else "none",
         "active_window_instances": instance_count,
     }
 
@@ -124,6 +175,13 @@ def runtime_heartbeat(session_id: str, source: str = "runtime-api"):
 
 @app.post("/runtime/recover-stale")
 def recover_stale_runtime_sessions(reason: str = "runtime_startup_recovery"):
+    active = storage.active_runtime_session()
+    if _runtime_is_recent(active):
+        return {
+            "closed": 0,
+            "preserved_active_runtime": active["id"],
+            "reason": "active_runtime_has_recent_heartbeat",
+        }
     return {"closed": storage.close_stale_sessions(reason, runtime_only=True)}
 
 
