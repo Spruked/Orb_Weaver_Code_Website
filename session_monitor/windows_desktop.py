@@ -29,6 +29,7 @@ WINDOW_SOURCES_EXCLUDED = {"vscode_exthost_discovery", "vscode_log_discovery"}
 
 POWERSHELL_SCRIPT = r"""
 $ErrorActionPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $items = @(
   Get-Process -Name Code -ErrorAction SilentlyContinue |
     Where-Object { $_.MainWindowHandle -ne 0 -and -not [string]::IsNullOrWhiteSpace($_.MainWindowTitle) } |
