@@ -99,6 +99,14 @@ def _glyph_for(event: dict) -> dict:
 
 
 def ensure_vault_runtime(force_manifest_refresh: bool = False) -> None:
+    """Ensure vault runtime directories exist without rewriting a valid manifest.
+
+    Code Weaver has companion writer processes (for example the provider usage
+    observer). Each process has its own module globals, so relying only on the
+    in-process ``_RUNTIME_READY`` flag would rewrite the shared manifest every
+    time a short-lived writer starts. Existing manifests are therefore treated
+    as durable readiness evidence unless an explicit refresh is requested.
+    """
     global _RUNTIME_READY
     with _LOCK:
         if _RUNTIME_READY and not force_manifest_refresh:
@@ -106,8 +114,13 @@ def ensure_vault_runtime(force_manifest_refresh: bool = False) -> None:
         for path in (SESSION_ROOT, MEMORY_ROOT, TELEMETRY_ROOT, GLYPH_ROOT, ARCHIVE_ROOT):
             path.mkdir(parents=True, exist_ok=True)
 
+        manifest_path = RUNTIME_ROOT / "vault_runtime_manifest.json"
+        if manifest_path.exists() and not force_manifest_refresh:
+            _RUNTIME_READY = True
+            return
+
         _write_json(
-            RUNTIME_ROOT / "vault_runtime_manifest.json",
+            manifest_path,
             {
                 "version": VAULT_BRIDGE_VERSION,
                 "vault": "code_weaver_vault",
