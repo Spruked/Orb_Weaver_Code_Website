@@ -9,6 +9,8 @@ RUNTIME_DATA_DIR="$HOME/.local/share/code-weaver-runtime"
 VAULT_DIR="$PROJECT_DIR/code_weaver_vault"
 MONITOR_SERVICE="code-weaver-session-monitor.service"
 WIDGET_SERVICE="code-weaver-widget.service"
+WHAM_SERVICE="code-weaver-wham-usage.service"
+WHAM_TIMER="code-weaver-wham-usage.timer"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -76,6 +78,36 @@ StandardError=journal
 WantedBy=default.target
 EOF
 
+cat >"$USER_SYSTEMD_DIR/$WHAM_SERVICE" <<EOF
+[Unit]
+Description=Code Weaver ChatGPT/Codex Provider Usage Observer
+After=$MONITOR_SERVICE
+Wants=$MONITOR_SERVICE
+
+[Service]
+Type=oneshot
+WorkingDirectory=$PROJECT_DIR/session_monitor
+Environment=CODE_WEAVER_RUNTIME_DATA_DIR=$RUNTIME_DATA_DIR
+Environment=CODE_WEAVER_VAULT_PATH=$VAULT_DIR
+ExecStart=$PYTHON_BIN $PROJECT_DIR/session_monitor/wham_usage.py
+StandardOutput=journal
+StandardError=journal
+EOF
+
+cat >"$USER_SYSTEMD_DIR/$WHAM_TIMER" <<EOF
+[Unit]
+Description=Code Weaver Provider Usage Observation Timer
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Unit=$WHAM_SERVICE
+
+[Install]
+WantedBy=timers.target
+EOF
+
 cat >"$USER_SYSTEMD_DIR/$WIDGET_SERVICE" <<EOF
 [Unit]
 Description=Code Weaver Desktop Widget
@@ -107,7 +139,7 @@ EOF
 chmod +x "$USER_BIN_DIR/code-weaver-code"
 
 systemctl --user daemon-reload
-systemctl --user enable "$MONITOR_SERVICE" "$WIDGET_SERVICE"
+systemctl --user enable "$MONITOR_SERVICE" "$WIDGET_SERVICE" "$WHAM_TIMER"
 systemctl --user restart "$MONITOR_SERVICE"
 
 for _ in $(seq 1 30); do
@@ -123,6 +155,11 @@ if ! curl -fsS http://127.0.0.1:18441/health >/dev/null 2>&1; then
   exit 1
 fi
 
+# Take one provider observation immediately, then continue every 30 seconds.
+# Authentication/network/schema failures are recorded as UNAVAILABLE evidence
+# and intentionally do not fail the timer service.
+systemctl --user start "$WHAM_SERVICE"
+systemctl --user restart "$WHAM_TIMER"
 systemctl --user restart "$WIDGET_SERVICE"
 
 cat <<EOF
@@ -132,6 +169,7 @@ Monitor:  http://127.0.0.1:18441
 Runtime:  $RUNTIME_DATA_DIR
 Vault:    $VAULT_DIR
 Launcher: $USER_BIN_DIR/code-weaver-code
+Provider: ChatGPT/Codex usage observation every 30 seconds
 
 Open a tracked VS Code window with:
   code-weaver-code /path/to/workspace
@@ -139,4 +177,5 @@ Open a tracked VS Code window with:
 Service status:
   systemctl --user status $MONITOR_SERVICE
   systemctl --user status $WIDGET_SERVICE
+  systemctl --user status $WHAM_TIMER
 EOF
