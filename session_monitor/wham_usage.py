@@ -30,9 +30,10 @@ from typing import Callable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import codex
 from evidence import EvidenceEvent, EvidenceLog, now_iso
 
-PARSER_VERSION = "wham-usage-0.2"
+PARSER_VERSION = "wham-usage-0.3"
 ENDPOINT = "https://chatgpt.com/backend-api/wham/usage"
 DEFAULT_TIMEOUT_SECONDS = 12.0
 RUNTIME_SOURCES = (
@@ -79,7 +80,9 @@ def load_auth(auth_path: Optional[Path] = None) -> dict:
     except (OSError, json.JSONDecodeError):
         return {"status": "unavailable", "reason": "auth_file_unreadable"}
 
-    tokens = payload.get("tokens") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict):
+        return {"status": "unavailable", "reason": "auth_file_invalid_shape"}
+    tokens = payload.get("tokens")
     tokens = tokens if isinstance(tokens, dict) else {}
     access_token = tokens.get("access_token")
     account_id = tokens.get("account_id") or payload.get("account_id")
@@ -143,10 +146,6 @@ def parse_usage(payload: dict, observed_at: Optional[str] = None) -> dict:
     if primary is None and secondary is None:
         raise ValueError("provider_rate_limit_windows_missing")
 
-    # Hash the meaningful provider state, not the observation timestamp or a
-    # second-by-second reset countdown. Reset epochs are bucketed to a minute so
-    # repeated polls do not flood the append-only ledger while a changed reset
-    # boundary is still detectable.
     state = {
         "primary_used_percent": primary.get("used_percent") if primary else None,
         "secondary_used_percent": secondary.get("used_percent") if secondary else None,
@@ -183,7 +182,7 @@ def fetch_usage(
     headers = {
         "Accept": "application/json",
         "Authorization": f"Bearer {auth['access_token']}",
-        "User-Agent": "code-weaver-wham-observer/0.2",
+        "User-Agent": "code-weaver-wham-observer/0.3",
     }
     if auth.get("account_id"):
         headers["chatgpt-account-id"] = auth["account_id"]
@@ -254,11 +253,6 @@ def _latest_source_hash(evidence: EvidenceLog, session_id: str, source: str) -> 
 
 
 def _append_if_changed(evidence: EvidenceLog, event: EvidenceEvent, record_hash: str) -> bool:
-    """Suppress only consecutive identical source states.
-
-    A state may legitimately recur later (for example after a reset), so using a
-    session-wide "hash ever seen" set would incorrectly erase that transition.
-    """
     if _latest_source_hash(evidence, event.session_id, event.source) == record_hash:
         return False
     evidence.append(event)
@@ -394,6 +388,7 @@ def record_once(
     data_dir: Optional[Path] = None,
     auth_path: Optional[Path] = None,
     opener: Callable = urlopen,
+    refresh_stats: bool = True,
 ) -> dict:
     """Collect one provider observation and append only state transitions."""
     data_dir = data_dir or _runtime_data_dir()
@@ -402,6 +397,14 @@ def record_once(
         return {"status": "no_active_runtime"}
 
     evidence = EvidenceLog(data_dir)
+    if refresh_stats:
+        try:
+            codex.read_current_quota(evidence, session_id)
+        except Exception:
+            # The provider observation remains independently useful when the
+            # local VS Code source is absent or temporarily unreadable.
+            pass
+
     auth = load_auth(auth_path)
     if auth.get("status") != "ready":
         persisted = _record_unavailable(
@@ -457,8 +460,6 @@ def main() -> int:
     result = record_once()
     if os.environ.get("CODE_WEAVER_WHAM_VERBOSE") == "1":
         print(json.dumps(result, sort_keys=True))
-    # Collection failure is evidence, not a service crash. Keep the timer alive
-    # so a later successful provider request can recover automatically.
     return 0
 
 
