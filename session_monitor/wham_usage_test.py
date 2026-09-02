@@ -122,12 +122,12 @@ def main() -> None:
             "primary_window": {
                 "used_percent": 42,
                 "limit_window_seconds": 18000,
-                "reset_after_seconds": 900,
+                "reset_at": 2000000000,
             },
             "secondary_window": {
                 "used_percent": 17,
                 "limit_window_seconds": 604800,
-                "reset_after_seconds": 3600,
+                "reset_at": 2000600000,
             },
         }
     }
