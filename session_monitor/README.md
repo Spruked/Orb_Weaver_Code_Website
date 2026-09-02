@@ -21,7 +21,7 @@ It does not calculate provider quota from elapsed time and does not claim access
 Default data directory:
 
 ```text
-~/.local/share/personal-session-monitor
+~/.local/share/code-weaver-runtime
 ```
 
 ## Evidence classes
@@ -29,14 +29,56 @@ Default data directory:
 Every event is explicitly classified:
 
 ```text
-observed  source/runtime data read directly
-inferred  derived from observed evidence
-manual    user-entered annotation
+observed     source/runtime data read directly
+derived      deterministic calculation or cross-source comparison
+inferred     evidence-supported inference
+manual       user-entered annotation
+unavailable  an expected source could not be observed
 ```
 
 ## Current observed sources
 
-### Codex quota
+### ChatGPT/Codex provider usage
+
+`wham_usage.py` is an independent provider-side quota observer. It reads the local Codex authentication created by `codex login` from:
+
+```text
+~/.codex/auth.json
+```
+
+or `$CODEX_HOME/auth.json` when `CODEX_HOME` is configured. It sends an authenticated read request to:
+
+```text
+https://chatgpt.com/backend-api/wham/usage
+```
+
+and records only normalized quota telemetry such as:
+
+```text
+primary_used_percent
+secondary_used_percent
+primary_window_minutes
+secondary_window_minutes
+primary_resets_at
+secondary_resets_at
+```
+
+The collector does **not** persist access tokens, account IDs, email addresses, or raw provider response bodies. Authentication exists only in memory for the request. The provider endpoint is treated as an independently observed source and does not overwrite the VS Code Stats source.
+
+The installer configures a user-level systemd oneshot + timer:
+
+```text
+code-weaver-wham-usage.service
+code-weaver-wham-usage.timer
+```
+
+The timer observes provider usage every 30 seconds. An unavailable authentication/network/provider/schema state is recorded as `UNAVAILABLE` evidence and does not stop future observations.
+
+When a recent `Codex Stats.log` quota observation is also present, Code Weaver creates a `DERIVED` `quota_source_comparison` event. Matching values are recorded as a match; disagreements are preserved as a mismatch. Stats observations older than ten minutes are not forced into a comparison.
+
+The request behavior was independently implemented after reviewing the public MIT-licensed `Maol-1997/codex-stats` project. Code Weaver does not require or vendor that extension at runtime.
+
+### Codex quota from VS Code Stats
 
 VS Code Codex Stats output is discovered dynamically under:
 
@@ -50,6 +92,8 @@ Observed percentage keys include:
 primaryUsedPercent
 secondaryUsedPercent
 ```
+
+This remains a separate evidence source from the provider-side observer.
 
 ### Codex rollout telemetry
 
@@ -103,6 +147,14 @@ python3 verify_parsers.py
 
 `verify_parsers.py` is read-only.
 
+Synthetic provider collector proof:
+
+```bash
+python3 wham_usage_test.py
+```
+
+The synthetic test sends no real ChatGPT request and writes only to a temporary runtime directory.
+
 ## Read vs write API contract
 
 Dashboard reads are side-effect free:
@@ -119,7 +171,7 @@ GET /timeline
 GET /evidence/sources
 ```
 
-Evidence enters the ledger only through explicit actions:
+Evidence enters the ledger only through explicit actions or monitor-owned observers:
 
 ```text
 POST /sessions
@@ -127,6 +179,7 @@ POST /sessions/{id}/end
 POST /codex/quota/observe/{session_id}
 POST /codex/rollout/ingest/{session_id}
 POST /vscode/scan/{session_id}
+code-weaver-wham-usage.timer -> wham_usage.py
 ```
 
 This prevents a dashboard refresh from manufacturing duplicate evidence.
@@ -134,6 +187,8 @@ This prevents a dashboard refresh from manufacturing duplicate evidence.
 ## Session isolation
 
 Rollout ingestion is bounded to the monitor session timestamps and cursor-based. Historical rollout records and historical VS Code directories must not contaminate a fresh session.
+
+Provider usage observations are attached only to the currently active Code Weaver parent runtime session.
 
 ## Correlation
 
@@ -145,6 +200,8 @@ Rollout ingestion is bounded to the monitor session timestamps and cursor-based.
 - Codex primary/secondary rate-window metadata
 - latest observed usage-limit event
 - reload/IPC-to-quota windows
+
+`wham_usage.py` additionally performs a narrow deterministic comparison between a new provider-side reading and the latest sufficiently recent `Codex Stats.log` quota reading. The original observations remain independent evidence records.
 
 Correlation is not causation. A quota delta near a reload is surfaced as evidence for investigation, not automatically blamed on the reload.
 
