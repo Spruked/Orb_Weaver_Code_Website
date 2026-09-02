@@ -1,6 +1,6 @@
 """Synthetic proof for the provider-side WHAM usage collector.
 
-No real ChatGPT request is sent.  The HTTP opener is replaced with deterministic
+No real ChatGPT request is sent. The HTTP opener is replaced with deterministic
 responses and all evidence is written under a temporary directory.
 """
 
@@ -63,7 +63,7 @@ def prepare_runtime(data_dir: Path) -> str:
             INSERT INTO sessions (id, source, started_at, ended_at, status)
             VALUES (?, ?, ?, NULL, 'active')
             """,
-            (session_id, "code_weaver_runtime", "2026-09-01T20:00:00+00:00"),
+            (session_id, "code_weaver_runtime", wham_usage.now_iso()),
         )
         conn.commit()
     return session_id
@@ -88,9 +88,8 @@ def prepare_auth() -> tuple[Path, str]:
     return path, token
 
 
-def seed_stats_observation(data_dir: Path, session_id: str) -> None:
-    evidence = EvidenceLog(data_dir)
-    evidence.append(
+def seed_stats_observation(data_dir: Path, session_id: str, timestamp: str) -> None:
+    EvidenceLog(data_dir).append(
         EvidenceEvent(
             session_id=session_id,
             category="codex",
@@ -104,10 +103,10 @@ def seed_stats_observation(data_dir: Path, session_id: str) -> None:
                     "primary_used_percent": 42,
                     "secondary_used_percent": 17,
                     "source_record_hash": "synthetic-stats-hash",
-                    "observed_at": "2026-09-01T20:00:00+00:00",
+                    "observed_at": timestamp,
                 }
             },
-            timestamp="2026-09-01T20:00:00+00:00",
+            timestamp=timestamp,
         )
     )
 
@@ -116,7 +115,7 @@ def main() -> None:
     data_dir = _TEMP_ROOT / "runtime"
     session_id = prepare_runtime(data_dir)
     auth_path, secret_token = prepare_auth()
-    seed_stats_observation(data_dir, session_id)
+    seed_stats_observation(data_dir, session_id, wham_usage.now_iso())
 
     payload = {
         "rate_limit": {
@@ -134,7 +133,10 @@ def main() -> None:
     }
 
     def fake_open(request, timeout=0):
-        assert_true(request.get_header("Authorization") == f"Bearer {secret_token}", "bearer token missing")
+        assert_true(
+            request.get_header("Authorization") == f"Bearer {secret_token}",
+            "bearer token missing",
+        )
         assert_true(
             request.get_header("Chatgpt-account-id") == "synthetic-account-id-never-persist",
             "account header missing",
@@ -148,23 +150,25 @@ def main() -> None:
 
     second = wham_usage.record_once(data_dir=data_dir, auth_path=auth_path, opener=fake_open)
     assert_true(second["status"] == "observed", "second provider observation failed")
-    assert_true(second["persisted"] is False, "identical provider observation duplicated evidence")
+    assert_true(second["persisted"] is False, "identical provider state duplicated evidence")
 
     evidence = EvidenceLog(data_dir)
     events = evidence.read_session(session_id)
     wham_events = [event for event in events if event.get("source") == "codex_wham_usage"]
     comparisons = [event for event in events if event.get("event_type") == "quota_source_comparison"]
-    assert_true(len(wham_events) == 1, "expected exactly one deduplicated WHAM observation")
+    assert_true(len(wham_events) == 1, "expected one deduplicated WHAM observation")
     assert_true(len(comparisons) == 1, "expected one source comparison")
-    comparison = comparisons[0]["data"]["normalized"]
-    assert_true(comparison["state"] == "match", "matching sources were not correlated as match")
+    assert_true(
+        comparisons[0]["data"]["normalized"]["state"] == "match",
+        "matching sources were not correlated as match",
+    )
 
     combined_text = (data_dir / "all_events.jsonl").read_text(encoding="utf-8")
     assert_true(secret_token not in combined_text, "access token leaked into evidence")
-    assert_true("synthetic-account-id-never-persist" not in combined_text, "account ID leaked into evidence")
-
-    def offline_open(request, timeout=0):
-        raise URLError("synthetic offline")
+    assert_true(
+        "synthetic-account-id-never-persist" not in combined_text,
+        "account ID leaked into evidence",
+    )
 
     changed_payload = {
         "rate_limit": {
@@ -173,17 +177,19 @@ def main() -> None:
         }
     }
 
-    # Confirm a changed observation is a new record before testing failure state.
     def changed_open(request, timeout=0):
         return FakeResponse(changed_payload)
 
     changed = wham_usage.record_once(data_dir=data_dir, auth_path=auth_path, opener=changed_open)
     assert_true(changed["persisted"] is True, "changed provider reading did not persist")
 
+    def offline_open(request, timeout=0):
+        raise URLError("synthetic offline")
+
     failure = wham_usage.record_once(data_dir=data_dir, auth_path=auth_path, opener=offline_open)
     assert_true(failure["status"] == "unavailable", "network failure was not represented as unavailable")
     failure_again = wham_usage.record_once(data_dir=data_dir, auth_path=auth_path, opener=offline_open)
-    assert_true(failure_again["persisted"] is False, "identical failure state duplicated evidence")
+    assert_true(failure_again["persisted"] is False, "identical consecutive failure duplicated evidence")
 
     events = EvidenceLog(data_dir).read_session(session_id)
     status_events = [event for event in events if event.get("event_type") == "quota_source_status"]
@@ -194,7 +200,7 @@ def main() -> None:
         {
             "status": "PASS",
             "provider_observation": True,
-            "deduplication": True,
+            "state_transition_deduplication": True,
             "source_correlation": True,
             "secret_redaction": True,
             "unavailable_state": True,
