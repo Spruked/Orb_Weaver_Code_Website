@@ -21,6 +21,9 @@ os.environ["CODEX_HOME"] = str(_TEMP_ROOT / "codex-home")
 from evidence import EvidenceEvent, EvidenceLog  # noqa: E402
 import wham_usage  # noqa: E402
 
+# Keep the synthetic proof isolated from any real VS Code logs on the machine.
+wham_usage.codex.VSCODE_LOGS_ROOT = _TEMP_ROOT / "no-real-vscode-logs"
+
 
 class FakeResponse:
     status = 200
