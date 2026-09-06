@@ -1,33 +1,38 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { SESSION_COOKIE, verifySessionToken } from "./lib/session-token";
 
-export function middleware(request: NextRequest) {
-  const session = request.cookies.get("owcc_session")?.value;
-  const { pathname } = request.nextUrl;
-  const hostname = request.headers.get("host")?.split(":")[0] ?? request.nextUrl.hostname;
-  const isLocalHost =
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "::1" ||
-    hostname === "[::1]";
+export async function middleware(request: NextRequest) {
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
 
-  if (pathname.startsWith("/account") && !session) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/checkout";
-    return NextResponse.redirect(url);
+  if (!token) {
+    return rejectRequest(request);
   }
 
-  if (pathname.startsWith("/session-monitor") && !session && !isLocalHost) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/checkout";
-    return NextResponse.redirect(url);
-  }
-
-  if (pathname.startsWith("/api/admin") && !session) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  const claims = await verifySessionToken(token);
+  if (!claims) {
+    return rejectRequest(request);
   }
 
   return NextResponse.next();
+}
+
+function rejectRequest(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  if (pathname.startsWith("/api/")) {
+    const response = NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    response.cookies.delete(SESSION_COOKIE);
+    return response;
+  }
+
+  const url = request.nextUrl.clone();
+  url.pathname = "/checkout";
+  url.search = "";
+
+  const response = NextResponse.redirect(url);
+  response.cookies.delete(SESSION_COOKIE);
+  return response;
 }
 
 export const config = {
