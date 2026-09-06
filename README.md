@@ -42,6 +42,29 @@ Private implementation/release components may still live outside this repository
 - Electron full local dashboard
 - Next.js `/session-monitor` dashboard adapter
 
+The control plane also exposes a provider-neutral environment registry and
+API usage ledger. Register editor windows, CLI agents, applications,
+containers, or remote workspaces with a stable `environment_id`; send
+heartbeats to keep them active. Environments become stale after two minutes
+without a heartbeat. API usage is submitted as completed, metadata-only
+provider records and remains separate from shared Codex/ChatGPT subscription
+quota.
+
+Registry and usage endpoints are available on the local monitor:
+
+```text
+POST /api/environments
+POST /api/environments/{environment_id}/heartbeat
+GET  /api/environments
+POST /api-usage/ingest
+GET  /api-usage/summary
+```
+
+The website provides the authenticated read-only proxy
+`GET /api/api-usage/summary`. Provider adapters currently cover OpenAI,
+Anthropic, Google Gemini, and xAI. Unknown token or cost fields remain
+unknown; the monitor never reads API keys or infers tokens from an open editor.
+
 ### Code Cipher correlation surface
 
 - release-manifest view

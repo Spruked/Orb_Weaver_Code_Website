@@ -3,6 +3,36 @@
 This file preserves working context for future restarts, crashes, or handoffs.
 Keep it current whenever a meaningful implementation or verification boundary changes.
 
+## 2026-09-06 — End-of-day Step 4 handoff
+
+### Completed and pushed
+
+- Confirmed the remote branch was fetched first and had no incoming commits.
+- Pushed commit `e5b053d` to `origin/codex-live-recovery-2026-09-06`.
+- Added the common TypeScript telemetry types in `lib/types/telemetry.ts`.
+- Added the provider-neutral API usage ledger and adapters in `session_monitor/api_usage.py`.
+- Added monitor API usage routes and the authenticated website summary proxy.
+- Added the environment/activity registry in `session_monitor/environment_registry.py` with stable IDs, metadata, heartbeats, stale transitions, and evidence events.
+- Added registry and API usage endpoint documentation to README and deployment guidance to DEPLOYMENT.md.
+- Production build, Python compilation, HWND lifecycle regression test, Node syntax checks, and `git diff --check` passed before the final push.
+- Fixed the long editor-title widget overflow and restarted only the widget service during the UI fix.
+
+### Runtime boundary at stop
+
+- Website service has a user-systemd `SESSION_SECRET` drop-in outside the repo.
+- Website is configured for loopback port 41000; monitor remains port 18441 only.
+- The monitor had previously hung during a controlled restart. The new registry/API ledger code was committed and pushed, but the monitor was deliberately not restarted afterward. Verify monitor responsiveness before relying on the new routes.
+- Widget and website were not restarted as part of the final documentation-only update.
+- No provider credentials were read, created, committed, or sent. API usage routes accept completed metadata reports only.
+- Database/auth acceptance work remains intentionally deferred.
+
+### Next session
+
+1. Check `curl --max-time 5 http://127.0.0.1:18441/health`.
+2. If responsive, restart only `code-weaver-session-monitor.service` and verify `/api/environments` and `/api-usage/summary`.
+3. Add behavioral registry/ledger route tests before enabling new UI paths.
+4. Reconcile the per-environment widgets and native tray helper against the live registry.
+
 ## 2026-09-06 — Authentication boundary lockdown committed to recovery branch
 
 ### Implemented in GitHub

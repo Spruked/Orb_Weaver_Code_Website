@@ -44,6 +44,20 @@ After rebuilding, use `systemctl --user restart orb-weaver-code.service`.
 Configure the environment described in README.md before using account or
 payment features.
 
+The Session Monitor owns the environment registry and API usage ledger. After
+changing monitor Python code, restart only its user service and verify the
+bounded health endpoint before restarting the widget:
+
+```bash
+systemctl --user restart code-weaver-session-monitor.service
+sleep 2
+curl --max-time 5 -fsS http://127.0.0.1:18441/health
+```
+
+If the restart or health request hangs, leave the website and widget running
+and inspect the monitor service separately. Do not treat an `active` systemd
+state as proof that the HTTP listener is responsive.
+
 If the Electron widget reports `Missing X server or $DISPLAY`, run this
 from a working WSLg terminal:
 
