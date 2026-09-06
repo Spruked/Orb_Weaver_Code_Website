@@ -3,6 +3,75 @@
 This file preserves working context for future restarts, crashes, or handoffs.
 Keep it current whenever a meaningful implementation or verification boundary changes.
 
+## 2026-09-06 — Live recovery, VS Code multi-window fix, and multi-provider handoff
+
+### Live State
+
+- Code Weaver public website restored on `127.0.0.1:41000`; `codeweaver.certsig.com` returned HTTP 200.
+- Session Monitor remains on `18441` and must stay monitor-only.
+- Monitor/runtime and vault mirror are healthy.
+- The current machine has two visible VS Code windows: `Orb_Weaver_Code_Website` in WSL and native-Windows `Dandy`.
+- Both windows share one Windows `Code.exe` process. The previous detector used one process `MainWindowHandle` and therefore missed Dandy. A local fix now discovers each top-level VS Code window independently; regression tests passed and the live monitor/widget report two separate identities.
+- The website user service is enabled/running and the widget recovered after WSLg display variables were imported.
+
+### Remaining Recovery Caveats
+
+- Pre-login startup of user services still needs systemd user lingering enabled.
+- The public dashboard still redirects unauthenticated visitors to a localhost URL.
+- Account/payment configuration is absent.
+- The working tree on the user machine is significantly dirty and contains live repairs newer than GitHub `main`. Do not blind-pull, reset, or overwrite it.
+
+### Product Scope Reconfirmed
+
+Code Weaver is not a VS Code-only monitor. VS Code is the first environment adapter.
+
+The broader developer-activity model must support identities for:
+
+- desktop editor/IDE windows;
+- CLI/agent sessions;
+- application/service processes.
+
+Usage records attach to those identities only when evidence supports the link. An open editor or running process is not proof of API-token usage.
+
+Environment views and provider views are separate:
+
+- Keep the existing dashboard as the VS Code environment window.
+- Future environment adapters may include Cursor, JetBrains, Zed, Windsurf, Visual Studio, terminal/CLI tooling, remote environments, WSL processes, and containers.
+- Provider windows are separate and aggregate each provider across all observable environments.
+
+Initial provider order:
+
+1. OpenAI / GPT / Codex
+2. Anthropic / Claude
+3. Google / Gemini
+4. xAI / Grok
+
+The provider architecture must be adapter-based so more providers can be added without redesigning the ledger/dashboard.
+
+Subscription/agent-plan usage and API usage remain separate evidence classes. Current Codex rollout/quota evidence is working, but generic API token/cost tracking is not complete. The common API usage model should normalize provider, model, activity/application identity, workspace/session when defensible, input/cache/output/reasoning/total tokens where exposed, request count, cost, rate-limit/quota state, reset data, timestamp, evidence source, and evidence class while retaining provider-specific extension fields.
+
+A future Global control-plane view should sit above environment and provider windows and support drill-down roughly as:
+
+`Global -> Provider -> Application/Environment -> Workspace/Session -> Request/Turn`
+
+### Pause / Handoff
+
+- Codex usage was reported at roughly 90% of the active allowance. Bryan chose to stop and wait for the usage window to recover rather than consume the remaining capacity.
+- Full continuation instructions are preserved in `HANDOFF_2026-09-06.md` on branch `code-weaver-handoff-2026-09-06`.
+- GitHub `main` remained at `528cde79b528aa1f459dcbd84595e45009c4874a` when this handoff branch was created. The branch is intentionally separate so GitHub documentation work does not move `main` underneath the dirty local workspace.
+
+### Resume Order
+
+1. Inspect and preserve the local dirty tree before any pull/reset.
+2. Reconcile/test the local VS Code multi-window repair, website service/recovery work, widget changes, and docs before committing them.
+3. Establish generic developer-activity, provider, usage-observation, and attribution contracts.
+4. Adapt the existing Codex/WHAM sources into that common model rather than rebuilding everything around an OpenAI-only schema.
+5. Implement OpenAI API usage first, then Anthropic, Gemini, and xAI adapters.
+6. Add provider-specific windows while keeping VS Code as its own environment window.
+7. Add the Global view after the provider/environment schemas stabilize.
+8. Add explicit registration/reporting hooks for CLI agents, containers, services, and remote environments where automatic attribution is not defensible.
+9. Regression-test identity isolation, evidence classes, duplicate suppression, provider failures, restart recovery, attribution, and UI rendering.
+
 ## 2026-08-31 — GitHub hardening pass
 
 ### Completed
