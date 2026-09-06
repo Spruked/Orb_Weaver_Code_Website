@@ -28,6 +28,7 @@ export async function verifySessionToken(token: string): Promise<SessionClaims |
   try {
     const { payload } = await jwtVerify(token, sessionSecret(), {
       algorithms: ["HS256"],
+      requiredClaims: ["sub", "iat", "exp"],
     });
 
     if (typeof payload.sub !== "string" || payload.sub.length === 0) {
