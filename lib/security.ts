@@ -1,19 +1,15 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { db } from "./database";
+import {
+  createSessionToken,
+  SESSION_AGE_SECONDS,
+  SESSION_COOKIE,
+  verifySessionToken,
+} from "./session-token";
 
-const SESSION_COOKIE = "owcc_session";
-const SESSION_AGE_SECONDS = 60 * 60 * 24 * 14;
-
-function sessionSecret() {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) {
-    throw new Error("SESSION_SECRET is not configured.");
-  }
-  return new TextEncoder().encode(secret);
-}
+export { createSessionToken };
 
 export async function hashPassword(password: string) {
   return bcrypt.hash(password, 12);
@@ -21,14 +17,6 @@ export async function hashPassword(password: string) {
 
 export async function verifyPassword(password: string, hash: string) {
   return bcrypt.compare(password, hash);
-}
-
-export async function createSessionToken(userId: string, role: string) {
-  return new SignJWT({ sub: userId, role })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime(`${SESSION_AGE_SECONDS}s`)
-    .sign(sessionSecret());
 }
 
 export async function setSessionCookie(token: string) {
@@ -49,18 +37,14 @@ export async function getCurrentUser() {
   const token = cookies().get(SESSION_COOKIE)?.value;
   if (!token) return null;
 
-  try {
-    const { payload } = await jwtVerify(token, sessionSecret());
-    if (!payload.sub) return null;
+  const payload = await verifySessionToken(token);
+  if (!payload) return null;
 
-    const user = await db.user.findUnique({
-      where: { id: String(payload.sub) },
-      select: { id: true, email: true, role: true, name: true },
-    });
-    return user;
-  } catch {
-    return null;
-  }
+  const user = await db.user.findUnique({
+    where: { id: payload.sub },
+    select: { id: true, email: true, role: true, name: true },
+  });
+  return user;
 }
 
 export async function requireUser() {
