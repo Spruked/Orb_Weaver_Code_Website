@@ -26,6 +26,8 @@ import release_evidence
 import vscode_logs
 import window_instances
 import windows_desktop
+import api_usage
+import environment_registry
 
 DATA_DIR = Path(
     os.environ.get(
@@ -41,6 +43,8 @@ DEFAULT_WORKSPACE_PATH = Path(
 ).resolve()
 
 storage = Storage(DATA_DIR)
+usage_ledger = api_usage.UsageLedger(storage)
+environment_registry.ensure_schema(storage)
 window_instances.ensure_schema(storage)
 windows_desktop.ensure_schema(storage)
 window_instances.reconcile_legacy_outer_log_bindings(storage)
@@ -244,6 +248,52 @@ def health():
         "active_window_instances": window_count,
         "active_extension_host_anchors": anchor_count,
     }
+
+
+@app.post("/api-usage/ingest")
+def ingest_api_usage(payload: dict):
+    """Record completed provider usage metadata without accepting credentials/content."""
+    session = storage.active_runtime_session()
+    if session is None:
+        return {"ok": False, "error": "No active runtime session."}
+    try:
+        return usage_ledger.record(payload, session["id"])
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@app.get("/api-usage/summary")
+def api_usage_summary(environment_id: Optional[str] = None, window_id: Optional[str] = None):
+    return usage_ledger.summary(environment_id=environment_id, window_id=window_id)
+
+
+@app.post("/api/environments")
+def register_environment(payload: dict):
+    session = storage.active_runtime_session()
+    if session is None:
+        return {"ok": False, "error": "No active runtime session."}
+    try:
+        return {"ok": True, "environment": environment_registry.register(storage, session["id"], payload)}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@app.post("/api/environments/{environment_id}/heartbeat")
+def environment_heartbeat(environment_id: str, payload: dict = {}):
+    session = storage.active_runtime_session()
+    if session is None:
+        return {"ok": False, "error": "No active runtime session."}
+    payload = {**payload, "environment_id": environment_id}
+    try:
+        return {"ok": True, "environment": environment_registry.register(storage, session["id"], payload)}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@app.get("/api/environments")
+def environments(include_stale: bool = True):
+    session = storage.active_runtime_session()
+    return {"environments": environment_registry.list_environments(storage, session["id"], include_stale) if session else [], "stale_after_seconds": environment_registry.STALE_AFTER_SECONDS}
 
 
 @app.get("/runtime/session")
