@@ -3,6 +3,29 @@
 This file preserves working context for future restarts, crashes, or handoffs.
 Keep it current whenever a meaningful implementation or verification boundary changes.
 
+## 2026-09-06 — Authentication boundary lockdown committed to recovery branch
+
+### Implemented in GitHub
+
+- Added `lib/session-token.ts` as the Edge-safe JWT primitive shared by middleware and server authentication.
+- Session tokens remain HS256-signed with `SESSION_SECRET`, use the existing `owcc_session` cookie, and retain the existing 14-day session lifetime.
+- `verifySessionToken()` now requires a valid signature plus `sub`, `iat`, and `exp`; malformed, unsigned, wrong-secret, missing-claim, and expired tokens resolve invalid.
+- `middleware.ts` now cryptographically verifies the cookie for `/account/:path*`, `/session-monitor/:path*`, and `/api/admin/:path*` instead of accepting any nonempty cookie.
+- Removed the localhost authentication bypass for `/session-monitor`; local and public requests now use the same JWT gate.
+- Invalid API sessions return `401`; invalid page sessions redirect to `/checkout`; invalid cookies are cleared on the response.
+- `lib/security.ts` keeps database-backed `getCurrentUser()`, `requireUser()`, and `requireAdmin()` authoritative. Middleware does not trust the JWT role claim as final admin authorization.
+- Existing `/api/admin/*` routes continue to enforce the current database `ADMIN` role server-side.
+- Website port `41000` and Session Monitor port `18441` remain separate. This patch does not expose, proxy, merge, restart, or modify the monitor service.
+- No widget, provider, API-usage ledger, Code Cipher, marketing, or Dandy files were changed by this auth patch.
+
+### Verification boundary
+
+- GitHub comparison from `b3437ac12aa1d005330b51b8a6a55c17d281190c` showed only `middleware.ts`, `lib/security.ts`, and new `lib/session-token.ts` changed before this DEVLOG entry.
+- Static TypeScript parsing of all three auth files passed.
+- Live WSL `npm run build`, service restart, and cookie acceptance tests have **not** been run from the GitHub connector session. Do not describe the auth patch as deployed until those checks pass on `/home/bryan/projects/Orb_Weaver_Code_Website`.
+- Required live acceptance cases remain: no cookie blocked; garbage cookie blocked; expired JWT blocked; valid normal user permitted on `/session-monitor`; normal user denied on `/api/admin/*`; valid admin permitted on `/api/admin/*`.
+- The previously observed public redirect-host issue that can produce `https://localhost:41000/checkout` is separate and was not repaired here.
+
 ## 2026-09-06 — WSL recovery, Windows window counting, developer-activity expansion
 
 ### Handoff requested by user
