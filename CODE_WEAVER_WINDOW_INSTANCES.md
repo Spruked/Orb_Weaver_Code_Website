@@ -18,7 +18,7 @@ WSL VS Code server session
     └── ...
 ```
 
-A top-level Windows `Code.exe` main window is direct evidence that a visible VS Code window exists. An `exthostN` directory is a Remote WSL **extension-host evidence anchor**. It is not, by itself, proof of a one-to-one visible-window identity.
+A visible, unowned top-level Windows `Code.exe` window is direct evidence that a visible VS Code window exists. The observer uses `EnumWindows` and `GetWindowThreadProcessId` to enumerate each window handle: multiple VS Code windows can share one process, so `Process.MainWindowHandle` undercounts them. An `exthostN` directory is a Remote WSL **extension-host evidence anchor**. It is not, by itself, proof of a one-to-one visible-window identity.
 
 That distinction matters because one user-visible VS Code window can coexist with auxiliary/stale/additional extension hosts. Code Weaver must never force `extension-host count == visible-window count` merely to make the dashboard look tidy.
 
@@ -65,7 +65,7 @@ Shared provider quota is deliberately shown above the tabs. It is one account-le
 A child window is directly observed through one of these sources:
 
 - Code Weaver explicitly registered the window through the tracked launcher; or
-- the Windows process API observed a `Code.exe` process with a non-zero top-level main-window handle and title.
+- the Windows window API observed a visible, unowned `Code.exe` top-level window with a non-zero handle and title.
 
 The Windows observer is read-only and is called from WSL through `powershell.exe` using an argument vector, not shell interpolation.
 

@@ -7,11 +7,13 @@ window.  This module keeps those concepts separate.
 
 The Windows observation is read-only.  ``powershell.exe`` is invoked with an
 argument vector (never through shell quoting) and returns JSON for Code.exe
-processes that currently own a non-zero main-window handle.
+top-level windows, including multiple windows owned by the same process.
 """
 
 from __future__ import annotations
 
+import base64
+import os
 import json
 import re
 import shutil
@@ -23,27 +25,109 @@ from typing import Optional
 
 from evidence import EvidenceEvent, now_iso
 
-PARSER_VERSION = "windows-desktop-0.1"
+PARSER_VERSION = "windows-desktop-0.3"
+DEFAULT_EDITOR_PROCESSES = {
+    "Code": "VS Code", "Code - Insiders": "VS Code Insiders", "Cursor": "Cursor",
+    "Windsurf": "Windsurf", "Zed": "Zed", "zed-editor": "Zed", "devenv": "Visual Studio",
+    "idea64": "IntelliJ IDEA", "pycharm64": "PyCharm", "webstorm64": "WebStorm",
+    "rider64": "Rider", "clion64": "CLion", "goland64": "GoLand", "datagrip64": "DataGrip",
+    "rustrover64": "RustRover", "phpstorm64": "PhpStorm", "rubymine64": "RubyMine",
+    "studio64": "Android Studio", "jetbrains_client64": "JetBrains Client",
+    "eclipse": "Eclipse", "emacs": "Emacs", "sublime_text": "Sublime Text", "gvim": "Vim",
+}
+
+
+def editor_processes() -> dict[str, str]:
+    names = dict(DEFAULT_EDITOR_PROCESSES)
+    for name in os.environ.get("CODE_WEAVER_EDITOR_PROCESSES", "").split(","):
+        name = name.strip().removesuffix(".exe")
+        if name:
+            names[name] = name
+    return names
+
 WINDOW_SOURCES_EXCLUDED = {"vscode_exthost_discovery", "vscode_log_discovery"}
 
 
 POWERSHELL_SCRIPT = r"""
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$items = @(
-  Get-Process -Name Code -ErrorAction SilentlyContinue |
-    Where-Object { $_.MainWindowHandle -ne 0 -and -not [string]::IsNullOrWhiteSpace($_.MainWindowTitle) } |
-    ForEach-Object {
-      $started = $null
-      try { $started = $_.StartTime.ToUniversalTime().ToString('o') } catch {}
-      [pscustomobject]@{
-        process_id = [int]$_.Id
-        window_handle = [int64]$_.MainWindowHandle
-        title = [string]$_.MainWindowTitle
-        started_at = $started
-      }
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class CodeWeaverWindows {
+    public delegate bool WindowCallback(IntPtr handle, IntPtr parameter);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr handle);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr handle, uint command);
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr handle, out uint processId);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowTextLength(IntPtr handle);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr handle, StringBuilder text, int count);
+
+    public class Window {
+        public int process_id;
+        public long window_handle;
+        public string title;
+        public string started_at;
+        public string process_name;
     }
-)
+
+    public static List<Window> Observe(string[] processNames) {
+        var processes = new Dictionary<int, string[]>();
+        foreach (var processName in processNames) {
+        foreach (var process in Process.GetProcessesByName(processName)) {
+            using (process) {
+                string started = null;
+                try { started = process.StartTime.ToUniversalTime().ToString("o"); }
+                catch (InvalidOperationException) {}
+                catch (Win32Exception) {}
+                processes[process.Id] = new string[] { started, processName };
+            }
+        }
+        }
+        var windows = new List<Window>();
+        // EnumWindows visits every top-level HWND. MainWindowHandle returns
+        // only one HWND per process, but Electron can own several windows.
+        WindowCallback callback = delegate(IntPtr handle, IntPtr parameter) {
+            if (!IsWindowVisible(handle) || GetWindow(handle, 4) != IntPtr.Zero)
+                return true; // Exclude hidden windows and owned dialogs.
+            uint processId;
+            GetWindowThreadProcessId(handle, out processId);
+            string[] processInfo;
+            if (!processes.TryGetValue((int)processId, out processInfo)) return true;
+            int length = GetWindowTextLength(handle);
+            if (length == 0) return true;
+            var title = new StringBuilder(length + 1);
+            GetWindowText(handle, title, title.Capacity);
+            if (!String.IsNullOrWhiteSpace(title.ToString())) {
+                windows.Add(new Window {
+                    process_id = (int)processId,
+                    window_handle = handle.ToInt64(),
+                    title = title.ToString(),
+                    started_at = processInfo[0],
+                    process_name = processInfo[1]
+                });
+            }
+            return true;
+        };
+        if (!EnumWindows(callback, IntPtr.Zero))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        return windows;
+    }
+}
+'@
+$names = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__EDITOR_NAMES_BASE64__')) | ConvertFrom-Json
+$items = @([CodeWeaverWindows]::Observe([string[]]$names))
 ConvertTo-Json -InputObject $items -Compress -Depth 3
 """.strip()
 
@@ -57,6 +141,8 @@ def _ensure_column(conn: sqlite3.Connection, column: str, definition: str) -> No
 def ensure_schema(storage) -> None:
     with sqlite3.connect(storage.db_path) as conn:
         _ensure_column(conn, "window_title", "TEXT")
+        _ensure_column(conn, "editor_name", "TEXT")
+        _ensure_column(conn, "editor_process_name", "TEXT")
         _ensure_column(conn, "windows_process_id", "TEXT")
         _ensure_column(conn, "windows_window_handle", "TEXT")
         _ensure_column(conn, "desktop_observed_at", "TEXT")
@@ -97,7 +183,7 @@ def observe_visible_windows() -> dict:
                 "-NoProfile",
                 "-NonInteractive",
                 "-Command",
-                POWERSHELL_SCRIPT,
+                POWERSHELL_SCRIPT.replace("__EDITOR_NAMES_BASE64__", base64.b64encode(json.dumps(list(editor_processes())).encode()).decode()),
             ],
             capture_output=True,
             text=True,
@@ -153,6 +239,8 @@ def observe_visible_windows() -> dict:
                 "window_handle": str(window_handle),
                 "title": str(title),
                 "started_at": item.get("started_at"),
+                "editor_name": editor_processes().get(item.get("process_name"), item.get("process_name")),
+                "editor_process_name": item.get("process_name"),
             }
         )
     windows.sort(key=lambda row: (row.get("started_at") or "", row["process_id"], row["window_handle"]))
@@ -304,13 +392,18 @@ def reconcile_visible_windows(storage, runtime_session_id: str) -> dict:
                         "windows_process_id": pid,
                         "windows_window_handle": handle,
                         "window_title": title,
-                        "identity_note": "Observed Code.exe top-level main window through the Windows process API",
+                        "identity_note": "Observed editor top-level window through the Windows window API",
+                        "editor_name": desktop.get("editor_name"),
                     },
                     timestamp=observed_at,
                 )
             )
             claimed_rows.add(window_id)
             created += 1
+        with sqlite3.connect(storage.db_path) as conn:
+            conn.execute("UPDATE vscode_windows SET editor_name = ?, editor_process_name = ? WHERE runtime_session_id = ? AND windows_process_id = ? AND windows_window_handle = ? AND ended_at IS NULL",
+                         (desktop.get("editor_name"), desktop.get("editor_process_name"), runtime_session_id, pid, handle))
+            conn.commit()
         seen_observer_handles.add((pid, handle))
 
     closed = 0

@@ -17,6 +17,7 @@ os.environ["CODE_WEAVER_VAULT_PATH"] = str(_TEMP_ROOT / "vault")
 
 from storage import Storage  # noqa: E402
 import windows_desktop  # noqa: E402
+import window_instances  # noqa: E402
 
 
 def assert_true(condition: bool, message: str) -> None:
@@ -26,6 +27,7 @@ def assert_true(condition: bool, message: str) -> None:
 
 def main() -> None:
     storage = Storage(_TEMP_ROOT / "runtime")
+    window_instances.ensure_schema(storage)
     session = storage.ensure_runtime_session(str(_TEMP_ROOT / "workspace"))
     session_id = session["id"]
 
@@ -41,10 +43,12 @@ def main() -> None:
                 "started_at": "2026-09-01T09:55:00+00:00",
             },
             {
-                "process_id": "202",
+                # Electron owns both windows in one process. The HWND must
+                # distinguish them even when PID and process start time match.
+                "process_id": "101",
                 "window_handle": "2002",
                 "title": "Repo B - Visual Studio Code",
-                "started_at": "2026-09-01T09:56:00+00:00",
+                "started_at": "2026-09-01T09:55:00+00:00",
             },
         ],
     }
@@ -53,6 +57,8 @@ def main() -> None:
     assert_true(result["created"] == 2, "two observed main windows were not created")
     rows = windows_desktop.visible_window_rows(storage, session_id, active_only=True)
     assert_true(len(rows) == 2, "active visible-window count should be two")
+    assert_true(len({row["windows_process_id"] for row in rows}) == 1, "fixture must share one process")
+    assert_true(len({row["windows_window_handle"] for row in rows}) == 2, "distinct handles must stay separate")
     ids = {row["id"] for row in rows}
 
     # Re-observing the same handles must update, not duplicate.
@@ -93,6 +99,7 @@ def main() -> None:
         {
             "status": "PASS",
             "created_two_windows": True,
+            "shared_process_distinct_windows": True,
             "stable_identity": True,
             "closed_disappeared_window": True,
             "unavailable_probe_preserved_state": True,

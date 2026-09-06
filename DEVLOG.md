@@ -3,6 +3,41 @@
 This file preserves working context for future restarts, crashes, or handoffs.
 Keep it current whenever a meaningful implementation or verification boundary changes.
 
+## 2026-09-06 — WSL recovery, Windows window counting, developer-activity expansion
+
+### Handoff requested by user
+
+Paused implementation at the user's request to preserve context. The full continuation state, exact requirements, incomplete wiring, and verification boundaries are in [`HANDOFF.md`](./HANDOFF.md). **The tray/per-environment/API-usage expansion is unfinished and must not be described as deployed.** No commits or pushes were made.
+
+### Completed and verified
+
+- Restored website at `127.0.0.1:41000` with a passing production build and an enabled systemd **user** service from new `systemd/orb-weaver-code.service`.
+- Verified local homepage and local dashboard HTTP 200; public `https://codeweaver.certsig.com` recovered from 502 to 200. Kept `18441` monitor-only.
+- Recovered the crashing Electron service by importing the working WSLg display environment into the user manager.
+- Fixed Windows VS Code undercount: two windows share PID 13524, so `Process.MainWindowHandle` only found one. The observer now enumerates each visible unowned HWND.
+- Verified both `Orb_Weaver_Code_Website [WSL: Ubuntu]` and `Dandy` live, with monitor health reporting two windows and vault mirror OK.
+- Regression test passed for two HWNDs in one PID, identity stability, window disappearance, and unavailable-probe safety; repaired missing schema initialization in the test.
+- Standalone Windows tray-helper smoke test created a native tray icon and verified real Windows topmost/skip-taskbar flags for the old widget and dashboard. Helper shut down cleanly after its input pipe closed.
+
+### In progress, not deployed
+
+- One Electron widget per detected environment/window, individual labels/positions/hide/dashboard navigation, shared-account quota labels, close/minimize-to-tray behavior.
+- Native Windows tray bridge for WSLg, with per-widget controls and HWND topmost/taskbar enforcement; ordinary Electron tray retained for other platforms.
+- Generalized native Windows editor process detection (Code/Insiders, Cursor, Windsurf, Zed, Visual Studio, JetBrains family, Android Studio, Eclipse, Emacs, Sublime, gVim, configurable extras).
+- Draft provider-adapter API usage ledger in `session_monitor/api_usage.py`, separate from subscription quota, with OpenAI/Anthropic/Gemini/xAI accounting and explicit provenance.
+- API widget UI exists but its `/api-usage/summary` endpoint is **not wired**; API dashboard view, environment registry, reporting hooks, behavioral tests, and full live UI validation remain to be built.
+
+### User-approved direction
+
+Monitor developer activity across desktop editors, CLI/coding agents, custom apps/services, Windows/WSL processes, containers and remote contexts where reliable evidence or explicit hooks exist. Providers should be adapters, initially OpenAI, Anthropic, Gemini, xAI. Preserve provider-specific usage fields. API keys stay with the user's applications; never infer tokens from an open window, and never conflate API billing with subscription limits.
+
+### Operational caveats
+
+- Running widget/monitor processes predate the latest unfinished edits; do not restart blindly.
+- Services still reported active at handoff, but the final monitor `/health` probe stalled. Use bounded requests and investigate responsiveness before assuming healthy runtime.
+- User lingering is disabled; boot-before-login startup is not guaranteed. Display environment import is not persistent across all WSL restarts.
+- Website commerce configuration remains absent. Existing public dashboard redirect points to localhost; that issue was observed but not repaired.
+
 ## 2026-08-31 — GitHub hardening pass
 
 ### Completed

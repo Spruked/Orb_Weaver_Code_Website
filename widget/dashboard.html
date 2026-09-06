@@ -399,7 +399,11 @@
     const $ = (id) => document.getElementById(id);
     let latestSummary = null;
     let latestInstances = { instances: [], unassigned: {} };
-    let activeTab = "global";
+    let activeTab = new URLSearchParams(location.search).get("instance") || "global";
+    window.widgetBridge.onSelectInstance((id) => {
+      activeTab = id;
+      void refresh();
+    });
 
     function escapeHtml(value) {
       return String(value ?? "Unknown").replace(/[&<>"']/g, (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[ch]);

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <title>Code Weaver Widget</title>
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self';" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
@@ -40,6 +41,7 @@
     }
 
     .title {
+      display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       font-weight: 800;
       font-size: 13px;
       text-transform: uppercase;
@@ -171,11 +173,14 @@
 <body>
   <div id="card">
     <div class="topline">
-      <span class="title">Session Monitor</span>
+      <div style="min-width:0">
+        <span id="instanceTitle" class="title">Code Weaver</span>
+        <span id="usageScope" style="font-size:11px;color:#9eb2af">Shared account quota</span>
+      </div>
       <div class="window-actions">
         <span id="statusDot" class="dot" title="Connection status"></span>
         <button id="hideBtn" class="icon-btn" title="Hide widget" aria-label="Hide widget">-</button>
-        <button id="quitBtn" class="icon-btn danger" title="Quit widget" aria-label="Quit widget">x</button>
+        <button id="quitBtn" class="icon-btn" title="Close to system tray" aria-label="Close to system tray">x</button>
       </div>
     </div>
 
@@ -213,7 +218,7 @@
 
     openBtn.addEventListener("click", () => window.widgetBridge.openDashboard());
     hideBtn.addEventListener("click", () => window.widgetBridge.hideWidget());
-    quitBtn.addEventListener("click", () => window.widgetBridge.quitApp());
+    quitBtn.addEventListener("click", () => window.widgetBridge.hideWidget());
 
     function setBarColor(el, valueEl, pct) {
       let color = "#54d6b9";
@@ -259,6 +264,11 @@
     }
 
     async function poll() {
+      const context = await window.widgetBridge.getWidgetContext();
+      const label = context?.instance_label || context?.window_title || "Code Weaver";
+      document.getElementById("instanceTitle").textContent = label;
+      document.getElementById("instanceTitle").title = context?.window_title || label;
+      if (context?.id === "api-usage") { await pollApiUsage(); return; }
       const summary = await window.widgetBridge.getMonitorSummary();
       lastUpdated.className = "";
       if (!summary.ok) {
@@ -297,10 +307,34 @@
       }
     }
 
+    async function pollApiUsage() {
+      document.getElementById("usageScope").textContent = "API usage · recorded today · UTC";
+      primaryLabel.textContent = "Input tokens";
+      secondaryLabel.textContent = "Output tokens";
+      primaryBar.style.width = "0%";
+      secondaryBar.style.width = "0%";
+      try {
+        const usage = await window.widgetBridge.getApiUsage();
+        statusDot.className = usage.request_count ? "dot ok" : "dot warn";
+        primaryValue.textContent = usage.input_tokens == null ? "—" : usage.input_tokens.toLocaleString();
+        secondaryValue.textContent = usage.output_tokens == null ? "—" : usage.output_tokens.toLocaleString();
+        primaryValue.style.fontSize = secondaryValue.style.fontSize = "23px";
+        primaryValue.className = secondaryValue.className = "value";
+        lastUpdated.textContent = usage.request_count ? `${usage.request_count} requests · ${usage.cost_display}` : "Awaiting API usage reports";
+      } catch {
+        statusDot.className = "dot err";
+        primaryValue.textContent = secondaryValue.textContent = "—";
+        lastUpdated.textContent = "API usage unavailable";
+      }
+    }
+
     async function startPolling() {
       const settings = await window.widgetBridge.getSettings();
-      poll();
-      setInterval(poll, settings.pollIntervalMs || 5000);
+      async function tick() {
+        try { await poll(); } catch { lastUpdated.textContent = "monitor unavailable"; }
+        setTimeout(tick, settings.pollIntervalMs || 5000);
+      }
+      tick();
     }
 
     startPolling();

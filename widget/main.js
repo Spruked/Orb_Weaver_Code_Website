@@ -2,6 +2,7 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, shell } = 
 const { spawn, spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const { startWindowsDesktopBridge } = require("./wsl-desktop");
 
 // --- Config -----------------------------------------------------------
 const DEFAULT_API_BASE = "http://127.0.0.1:18441";
@@ -9,7 +10,7 @@ const DEFAULT_DASHBOARD_URL = "http://127.0.0.1:41000/session-monitor";
 const DEFAULT_WORKSPACE_PATH = path.resolve(__dirname, "..");
 const SETTINGS_PATH = path.join(app.getPath("userData"), "widget-settings.json");
 const WIDGET_WIDTH = 360;
-const WIDGET_HEIGHT = 188;
+const WIDGET_HEIGHT = 230;
 const DASHBOARD_WIDTH = 980;
 const DASHBOARD_HEIGHT = 720;
 const MONITOR_DIR = path.resolve(__dirname, "..", "session_monitor");
@@ -33,6 +34,8 @@ function loadSettings() {
     workspacePath: DEFAULT_WORKSPACE_PATH,
     pollIntervalMs: 5000,
     widgetBounds: null,
+    widgetBoundsByKey: {},
+    apiUsageWidget: true,
     clickThrough: false,
   };
   try {
@@ -56,30 +59,34 @@ function updateSettings(partial) {
   return settings;
 }
 
-let widgetWindow = null;
+const widgetWindows = new Map();
 let dashboardWindow = null;
 let tray = null;
+let desktopBridge = null;
 let monitorProcess = null;
 let monitorStderr = "";
 let collectorTimer = null;
 let topmostTimer = null;
+let instanceTimer = null;
+let instanceSyncPromise = null;
+let widgetsHidden = false;
 let settings = loadSettings();
 let workspaceScanCache = null;
 let workspaceScanCachedAt = 0;
 let widgetSessionId = null;
 let quitSaveStarted = false;
+let cachedSummary = null;
+let cachedSummaryAt = 0;
+let summaryPromise = null;
 
-function enforceWindowTopmost(window, level) {
-  if (!window || window.isDestroyed()) return;
+function enforceWindowTopmost(window, level = "floating") {
+  if (!window || window.isDestroyed() || !window.isVisible() || window.isMinimized()) return;
   window.setAlwaysOnTop(true, level);
-  if (process.platform === "darwin") {
-    window.moveTop();
-  }
 }
 
 function enforceTopmostWindows() {
-  enforceWindowTopmost(widgetWindow, "screen-saver");
-  enforceWindowTopmost(dashboardWindow, "floating");
+  for (const { window } of widgetWindows.values()) enforceWindowTopmost(window);
+  enforceWindowTopmost(dashboardWindow);
 }
 
 function startTopmostEnforcer() {
@@ -88,150 +95,212 @@ function startTopmostEnforcer() {
   topmostTimer = setInterval(enforceTopmostWindows, TOPMOST_ENFORCE_INTERVAL_MS);
 }
 
-function defaultCornerBounds() {
-  const { workAreaSize } = screen.getPrimaryDisplay();
+function defaultCornerBounds(slot = 0) {
+  const area = screen.getPrimaryDisplay().workArea;
   const margin = 16;
+  const rows = Math.max(1, Math.floor((area.height - margin) / (WIDGET_HEIGHT + margin)));
+  const column = Math.floor(slot / rows);
   return {
-    x: workAreaSize.width - WIDGET_WIDTH - margin,
-    y: workAreaSize.height - WIDGET_HEIGHT - margin,
+    x: area.x + Math.max(0, area.width - (column + 1) * (WIDGET_WIDTH + margin)),
+    y: area.y + Math.max(0, area.height - (slot % rows + 1) * (WIDGET_HEIGHT + margin)),
     width: WIDGET_WIDTH,
     height: WIDGET_HEIGHT,
   };
 }
 
-function widgetBounds() {
-  const bounds = settings.widgetBounds || defaultCornerBounds();
-  const width = Math.max(bounds.width || WIDGET_WIDTH, WIDGET_WIDTH);
-  const height = Math.max(bounds.height || WIDGET_HEIGHT, WIDGET_HEIGHT);
-  const { workAreaSize } = screen.getPrimaryDisplay();
+function widgetBounds(key, slot) {
+  const bounds = settings.widgetBoundsByKey?.[key] || defaultCornerBounds(slot);
+  const area = screen.getDisplayMatching(bounds).workArea;
   return {
-    x: Math.min(Math.max(bounds.x ?? 0, 0), Math.max(workAreaSize.width - width, 0)),
-    y: Math.min(Math.max(bounds.y ?? 0, 0), Math.max(workAreaSize.height - height, 0)),
-    width,
-    height,
+    x: Math.min(Math.max(bounds.x, area.x), area.x + Math.max(0, area.width - WIDGET_WIDTH)),
+    y: Math.min(Math.max(bounds.y, area.y), area.y + Math.max(0, area.height - WIDGET_HEIGHT)),
+    width: WIDGET_WIDTH, height: WIDGET_HEIGHT,
   };
 }
 
-function createWidgetWindow() {
-  const bounds = widgetBounds();
-  widgetWindow = new BrowserWindow({
-    ...bounds,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    resizable: false,
-    skipTaskbar: true,
-    hasShadow: false,
-    focusable: true,
-    autoHideMenuBar: true,
-    backgroundColor: "#00000000",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  enforceWindowTopmost(widgetWindow, "screen-saver");
-  widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  widgetWindow.setMenuBarVisibility(false);
-  widgetWindow.loadFile(path.join(__dirname, "widget.html"));
-
-  widgetWindow.on("ready-to-show", () => enforceWindowTopmost(widgetWindow, "screen-saver"));
-  widgetWindow.on("show", () => enforceWindowTopmost(widgetWindow, "screen-saver"));
-  widgetWindow.on("focus", () => enforceWindowTopmost(widgetWindow, "screen-saver"));
-  widgetWindow.on("blur", () => enforceWindowTopmost(widgetWindow, "screen-saver"));
-  widgetWindow.on("restore", () => enforceWindowTopmost(widgetWindow, "screen-saver"));
-  widgetWindow.on("move", () => {
-    if (!widgetWindow) return;
-    enforceWindowTopmost(widgetWindow, "screen-saver");
-    const [x, y] = widgetWindow.getPosition();
-    const [width, height] = widgetWindow.getSize();
-    settings = saveSettings({ widgetBounds: { x, y, width, height } });
-  });
-
-  if (settings.clickThrough) {
-    widgetWindow.setIgnoreMouseEvents(true, { forward: true });
-  }
+function instanceLabel(instance) {
+  return instance?.instance_label || instance?.window_title || instance?.workspace_path || "Editor window";
 }
 
-function createDashboardWindow() {
-  if (dashboardWindow) {
-    enforceWindowTopmost(dashboardWindow, "floating");
-    dashboardWindow.show();
-    dashboardWindow.focus();
+function desktopState() {
+  return {
+    widgets: [...widgetWindows.values()].map(({ window, instance, title }) => ({
+      id: instance.id, label: instanceLabel(instance), title, visible: window.isVisible() && !window.isMinimized(),
+    })),
+    dashboard: dashboardWindow && !dashboardWindow.isDestroyed() ? {
+      id: "dashboard", label: "Dashboard", title: dashboardWindow.getTitle(),
+      visible: dashboardWindow.isVisible() && !dashboardWindow.isMinimized(),
+    } : null,
+  };
+}
+
+function syncDesktop() {
+  desktopBridge?.sync();
+  buildTrayMenu();
+}
+
+function installTrayWindowBehavior(window) {
+  window.on("close", (event) => {
+    if (!quitSaveStarted) { event.preventDefault(); window.hide(); }
+  });
+  window.on("minimize", (event) => { event.preventDefault(); window.hide(); });
+  for (const event of ["show", "restore", "ready-to-show"]) {
+    window.on(event, () => { enforceWindowTopmost(window); syncDesktop(); });
+  }
+  window.on("hide", syncDesktop);
+  window.on("page-title-updated", (event) => event.preventDefault());
+}
+
+function showWindow(window) {
+  if (!window || window.isDestroyed()) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  enforceWindowTopmost(window);
+  window.focus();
+  syncDesktop();
+}
+
+function createWidgetWindow(instance) {
+  const usedSlots = new Set([...widgetWindows.values()].map((entry) => entry.slot));
+  let slot = 0;
+  while (usedSlots.has(slot)) slot++;
+  const key = instance.window_identifier || instance.id;
+  const title = `Code Weaver Widget ${slot + 1} — ${instanceLabel(instance)}`;
+  const window = new BrowserWindow({
+    ...widgetBounds(key, slot), title,
+    frame: false, transparent: true, alwaysOnTop: true, resizable: false,
+    skipTaskbar: true, hasShadow: false, focusable: true, autoHideMenuBar: true,
+    show: false, backgroundColor: "#00000000",
+    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false },
+  });
+  const entry = { window, instance, slot, key, title };
+  widgetWindows.set(instance.id, entry);
+  installTrayWindowBehavior(window);
+  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  window.setMenuBarVisibility(false);
+  window.loadFile(path.join(__dirname, "widget.html"));
+  window.once("ready-to-show", () => { if (!widgetsHidden) window.showInactive(); });
+  window.on("move", () => {
+    if (window.isDestroyed()) return;
+    settings = saveSettings({ widgetBoundsByKey: { ...settings.widgetBoundsByKey, [key]: window.getBounds() } });
+  });
+  window.on("closed", () => { widgetWindows.delete(instance.id); syncDesktop(); });
+  if (settings.clickThrough) window.setIgnoreMouseEvents(true, { forward: true });
+  return entry;
+}
+
+function reconcileWidgetWindows(instances) {
+  const desired = instances.length ? [...instances] : [{ id: "global", instance_label: "No editor windows detected" }];
+  if (settings.apiUsageWidget) desired.push({ id: "api-usage", instance_label: "API token usage" });
+  const ids = new Set(desired.map((instance) => instance.id));
+  for (const [id, entry] of widgetWindows) {
+    if (!ids.has(id)) entry.window.destroy();
+  }
+  for (const instance of desired) {
+    const entry = widgetWindows.get(instance.id);
+    if (!entry) { createWidgetWindow(instance); continue; }
+    entry.instance = instance;
+    const title = `Code Weaver Widget ${entry.slot + 1} — ${instanceLabel(instance)}`;
+    if (entry.title !== title) { entry.title = title; entry.window.setTitle(title); }
+  }
+  syncDesktop();
+}
+
+function syncInstanceWidgets() {
+  if (instanceSyncPromise) return instanceSyncPromise;
+  instanceSyncPromise = (async () => {
+    try {
+      const session = await readJson("/runtime/session");
+      const result = session?.id ? await readJson(`/runtime/session/${encodeURIComponent(session.id)}/vscode-windows?active_only=true`) : { windows: [] };
+      if (!Array.isArray(result.windows)) return;
+      reconcileWidgetWindows(result.windows);
+    } catch { /* Preserve existing windows when observation is unavailable. */ }
+  })().finally(() => { instanceSyncPromise = null; });
+  return instanceSyncPromise;
+}
+
+function createDashboardWindow(instanceId = "global") {
+  if (dashboardWindow && !dashboardWindow.isDestroyed()) {
+    showWindow(dashboardWindow);
+    const select = () => dashboardWindow?.webContents.send("select-instance", instanceId);
+    if (dashboardWindow.webContents.isLoading()) dashboardWindow.webContents.once("did-finish-load", select);
+    else select();
     return;
   }
   dashboardWindow = new BrowserWindow({
-    width: DASHBOARD_WIDTH,
-    height: DASHBOARD_HEIGHT,
-    minWidth: 760,
-    minHeight: 520,
-    alwaysOnTop: true,
-    autoHideMenuBar: true,
-    backgroundColor: "#0b0f12",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+    width: DASHBOARD_WIDTH, height: DASHBOARD_HEIGHT, minWidth: 760, minHeight: 520,
+    title: "Code Weaver Dashboard", alwaysOnTop: true, skipTaskbar: true,
+    autoHideMenuBar: true, backgroundColor: "#0b0f12", show: false,
+    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false },
   });
-  enforceWindowTopmost(dashboardWindow, "floating");
+  installTrayWindowBehavior(dashboardWindow);
   dashboardWindow.setMenuBarVisibility(false);
-  dashboardWindow.loadFile(path.join(__dirname, "dashboard.html"));
-  dashboardWindow.on("ready-to-show", () => enforceWindowTopmost(dashboardWindow, "floating"));
-  dashboardWindow.on("show", () => enforceWindowTopmost(dashboardWindow, "floating"));
-  dashboardWindow.on("focus", () => enforceWindowTopmost(dashboardWindow, "floating"));
-  dashboardWindow.on("blur", () => enforceWindowTopmost(dashboardWindow, "floating"));
-  dashboardWindow.on("restore", () => enforceWindowTopmost(dashboardWindow, "floating"));
-  dashboardWindow.on("closed", () => { dashboardWindow = null; });
+  dashboardWindow.loadFile(path.join(__dirname, "dashboard.html"), { query: { instance: instanceId } });
+  dashboardWindow.once("ready-to-show", () => showWindow(dashboardWindow));
+  dashboardWindow.on("closed", () => { dashboardWindow = null; syncDesktop(); });
 }
 
 function toggleClickThrough() {
   settings = saveSettings({ clickThrough: !settings.clickThrough });
-  widgetWindow?.setIgnoreMouseEvents(settings.clickThrough, { forward: true });
-  buildTrayMenu();
+  for (const { window } of widgetWindows.values()) window.setIgnoreMouseEvents(settings.clickThrough, { forward: true });
+  syncDesktop();
 }
 
 function resetWidgetPosition() {
-  if (!widgetWindow) return;
-  const bounds = defaultCornerBounds();
-  widgetWindow.setBounds(bounds);
-  settings = updateSettings({ widgetBounds: bounds });
+  for (const { window, slot } of widgetWindows.values()) window.setBounds(defaultCornerBounds(slot));
+}
+
+function handleTrayAction(action, id) {
+  const entry = widgetWindows.get(id);
+  switch (action) {
+    case "show-all":
+      widgetsHidden = false;
+      for (const { window } of widgetWindows.values()) showWindow(window);
+      break;
+    case "hide-all":
+      widgetsHidden = true;
+      for (const { window } of widgetWindows.values()) window.hide();
+      break;
+    case "toggle-widget":
+      if (entry) entry.window.isVisible() ? entry.window.hide() : showWindow(entry.window);
+      break;
+    case "dashboard": createDashboardWindow(entry?.instance.id || "global"); break;
+    case "hide-dashboard": dashboardWindow?.hide(); break;
+    case "collect": void collectActiveSessionEvidence(); break;
+    case "quit": app.quit(); break;
+  }
+  syncDesktop();
 }
 
 function buildTrayMenu() {
   if (!tray) return;
-  const menu = Menu.buildFromTemplate([
-    { label: "Show/Hide Widget", click: () => widgetWindow?.isVisible() ? widgetWindow.hide() : widgetWindow?.show() },
-    { label: "Open Full Dashboard", click: createDashboardWindow },
-    { label: "Open Web Dashboard", click: () => shell.openExternal(settings.dashboardUrl) },
-    { label: "Start / Check Monitor API", click: () => startMonitorServer() },
-    { label: "Collect Evidence Now", click: () => collectActiveSessionEvidence() },
-    { label: `API: ${settings.apiBase}`, enabled: false },
-    { label: `Dashboard: ${settings.dashboardUrl}`, enabled: false },
-    { label: "Reset Widget Position", click: resetWidgetPosition },
-    {
-      label: "Click-Through Mode",
-      type: "checkbox",
-      checked: settings.clickThrough,
-      click: toggleClickThrough,
-    },
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Show all widgets", click: () => handleTrayAction("show-all") },
+    { label: "Hide all widgets", click: () => handleTrayAction("hide-all") },
+    ...[...widgetWindows.values()].map(({ instance, window }) => ({
+      label: instanceLabel(instance), submenu: [
+        { label: window.isVisible() ? "Hide widget" : "Show widget", click: () => handleTrayAction("toggle-widget", instance.id) },
+        { label: "Open dashboard for this window", click: () => createDashboardWindow(instance.id) },
+      ],
+    })),
     { type: "separator" },
-    { label: "Quit", click: () => app.quit() },
-  ]);
-  tray.setContextMenu(menu);
+    { label: "Open full dashboard", click: () => createDashboardWindow() },
+    { label: "Hide dashboard", click: () => dashboardWindow?.hide() },
+    { label: "Open web dashboard", click: () => shell.openExternal(settings.dashboardUrl) },
+    { label: "Collect evidence now", click: () => collectActiveSessionEvidence() },
+    { label: "Reset widget positions", click: resetWidgetPosition },
+    { label: "Click-through mode", type: "checkbox", checked: settings.clickThrough, click: toggleClickThrough },
+    { type: "separator" },
+    { label: "Quit Code Weaver", click: () => app.quit() },
+  ]));
 }
 
 function createTray() {
-  const icon = nativeImage.createEmpty();
-  tray = new Tray(icon.isEmpty() ? nativeImage.createFromDataURL(FALLBACK_ICON) : icon);
-  tray.setToolTip("Session Monitor / Code Cipher");
-  tray.on("click", () => {
-    if (widgetWindow) {
-      widgetWindow.isVisible() ? widgetWindow.hide() : widgetWindow.show();
-    }
-  });
+  desktopBridge = startWindowsDesktopBridge(handleTrayAction, desktopState);
+  if (desktopBridge) return;
+  tray = new Tray(nativeImage.createFromDataURL(FALLBACK_ICON));
+  tray.setToolTip("Code Weaver — widgets and dashboard");
+  tray.on("click", () => handleTrayAction("show-all"));
   buildTrayMenu();
 }
 
@@ -240,7 +309,7 @@ const FALLBACK_ICON =
 
 async function readJson(pathname) {
   const url = new URL(pathname, settings.apiBase);
-  const response = await fetch(url, { cache: "no-store" });
+  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15000) });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} from ${url}`);
   }
@@ -521,7 +590,9 @@ async function collectActiveSessionEvidence() {
   const session = await activeSession();
   if (!session) return { ok: true, status: "no-active-session" };
 
-  return collectSessionEvidence(session.id);
+  const result = await collectSessionEvidence(session.id);
+  await syncInstanceWidgets();
+  return result;
 }
 
 function startEvidenceCollector() {
@@ -551,7 +622,7 @@ async function saveSessionOnClose() {
   }
 }
 
-async function getMonitorSummary() {
+async function fetchMonitorSummary() {
   const codeCipher = readCodeCipherManifest();
   try {
     const today = await readJson("/today");
@@ -591,13 +662,30 @@ async function getMonitorSummary() {
   }
 }
 
+function getMonitorSummary() {
+  if (cachedSummary && Date.now() - cachedSummaryAt < 2000) return Promise.resolve(cachedSummary);
+  if (summaryPromise) return summaryPromise;
+  summaryPromise = fetchMonitorSummary().then((summary) => {
+    cachedSummary = summary;
+    cachedSummaryAt = Date.now();
+    return summary;
+  }).finally(() => { summaryPromise = null; });
+  return summaryPromise;
+}
+
+function widgetEntryForSender(event) {
+  return [...widgetWindows.values()].find(({ window }) => window.webContents === event.sender);
+}
+
+ipcMain.handle("get-widget-context", (event) => widgetEntryForSender(event)?.instance || null);
+ipcMain.handle("get-api-usage", () => readJson("/api-usage/summary"));
 ipcMain.handle("get-settings", () => settings);
-ipcMain.handle("open-dashboard", () => createDashboardWindow());
+ipcMain.handle("open-dashboard", (event) => createDashboardWindow(widgetEntryForSender(event)?.instance.id || "global"));
 ipcMain.handle("get-monitor-summary", () => getMonitorSummary());
 ipcMain.handle("start-monitor", () => startMonitorServer());
 ipcMain.handle("collect-evidence", () => collectActiveSessionEvidence());
 ipcMain.handle("observe-quota", (_event, sessionId) => observeQuota(sessionId));
-ipcMain.handle("hide-widget", () => widgetWindow?.hide());
+ipcMain.handle("hide-widget", (event) => widgetEntryForSender(event)?.window.hide());
 ipcMain.handle("quit-app", () => app.quit());
 ipcMain.handle("set-workspace-path", (_event, workspacePath) => {
   if (typeof workspacePath !== "string" || workspacePath.trim().length === 0) {
@@ -617,24 +705,22 @@ ipcMain.handle("scan-workspace", () => ({ ok: true, scan: scanWorkspace(true) })
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   createTray();
-  createWidgetWindow();
+  reconcileWidgetWindows([]);
   startTopmostEnforcer();
   await startMonitorServer();
   await resetSessionOnOpen();
+  await syncInstanceWidgets();
+  instanceTimer = setInterval(syncInstanceWidgets, 5000);
   startEvidenceCollector();
 });
 
-app.on("second-instance", () => {
-  if (widgetWindow) {
-    widgetWindow.show();
-    enforceWindowTopmost(widgetWindow, "screen-saver");
-    widgetWindow.focus();
-  }
-});
+app.on("second-instance", () => handleTrayAction("show-all"));
 
 app.on("before-quit", (event) => {
   if (!quitSaveStarted) {
     quitSaveStarted = true;
+    desktopBridge?.stop();
+    if (instanceTimer) clearInterval(instanceTimer);
     event.preventDefault();
     void saveSessionOnClose().finally(() => app.quit());
     return;

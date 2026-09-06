@@ -20,6 +20,41 @@
 
 ## Option 1: Systemd Service (Recommended)
 
+### WSL user service with Cloudflare Tunnel
+
+The website listens on `127.0.0.1:41000`, the origin for
+`codeweaver.certsig.com`. Port `18441` belongs only to the local Session
+Monitor. The monitor installer does not build or install the website.
+
+For the canonical WSL workspace, after a successful `npm run build`:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp systemd/orb-weaver-code.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now orb-weaver-code.service
+curl -fsS -o /dev/null http://127.0.0.1:41000/
+systemctl --user status orb-weaver-code.service --no-pager
+```
+
+Use either the user service or the system service below, as both bind port
+41000. The user service starts with the user's systemd manager; starting it
+at boot without a login requires lingering to be enabled for that user.
+After rebuilding, use `systemctl --user restart orb-weaver-code.service`.
+Configure the environment described in README.md before using account or
+payment features.
+
+If the Electron widget reports `Missing X server or $DISPLAY`, run this
+from a working WSLg terminal:
+
+```bash
+systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XDG_RUNTIME_DIR
+systemctl --user restart code-weaver-widget.service
+```
+
+This imports the current graphical session settings; repeat after a WSL
+restart if the user manager has lost them.
+
 ### Setup Steps
 
 1. **Copy the service file to systemd directory**

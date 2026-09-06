@@ -1,6 +1,13 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("widgetBridge", {
+  getWidgetContext: () => ipcRenderer.invoke("get-widget-context"),
+  getApiUsage: () => ipcRenderer.invoke("get-api-usage"),
+  onSelectInstance: (callback) => {
+    const listener = (_event, id) => callback(id);
+    ipcRenderer.on("select-instance", listener);
+    return () => ipcRenderer.removeListener("select-instance", listener);
+  },
   getSettings: () => ipcRenderer.invoke("get-settings"),
   getMonitorSummary: () => ipcRenderer.invoke("get-monitor-summary"),
   startMonitor: () => ipcRenderer.invoke("start-monitor"),
