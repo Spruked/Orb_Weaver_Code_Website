@@ -98,6 +98,18 @@ def _glyph_for(event: dict) -> dict:
     }
 
 
+def _valid_runtime_manifest(manifest_path: Path) -> bool:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return bool(
+        isinstance(manifest, dict)
+        and manifest.get("version") == VAULT_BRIDGE_VERSION
+        and manifest.get("vault") == "code_weaver_vault"
+    )
+
+
 def ensure_vault_runtime(force_manifest_refresh: bool = False) -> None:
     """Ensure vault runtime directories exist without rewriting a valid manifest.
 
@@ -105,7 +117,8 @@ def ensure_vault_runtime(force_manifest_refresh: bool = False) -> None:
     observer). Each process has its own module globals, so relying only on the
     in-process ``_RUNTIME_READY`` flag would rewrite the shared manifest every
     time a short-lived writer starts. Existing manifests are therefore treated
-    as durable readiness evidence unless an explicit refresh is requested.
+    as durable readiness evidence only when they are readable and match the
+    current bridge version.
     """
     global _RUNTIME_READY
     with _LOCK:
@@ -115,7 +128,7 @@ def ensure_vault_runtime(force_manifest_refresh: bool = False) -> None:
             path.mkdir(parents=True, exist_ok=True)
 
         manifest_path = RUNTIME_ROOT / "vault_runtime_manifest.json"
-        if manifest_path.exists() and not force_manifest_refresh:
+        if not force_manifest_refresh and _valid_runtime_manifest(manifest_path):
             _RUNTIME_READY = True
             return
 
