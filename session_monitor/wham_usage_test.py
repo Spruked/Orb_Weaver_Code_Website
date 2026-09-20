@@ -136,12 +136,13 @@ def main() -> None:
     }
 
     def fake_open(request, timeout=0):
+        headers = {name.lower(): value for name, value in request.header_items()}
         assert_true(
-            request.get_header("Authorization") == f"Bearer {secret_token}",
+            headers.get("authorization") == f"Bearer {secret_token}",
             "bearer token missing",
         )
         assert_true(
-            request.get_header("Chatgpt-account-id") == "synthetic-account-id-never-persist",
+            headers.get("chatgpt-account-id") == "synthetic-account-id-never-persist",
             "account header missing",
         )
         assert_true(timeout > 0, "request timeout was not set")
@@ -151,13 +152,32 @@ def main() -> None:
     assert_true(first["status"] == "observed", "provider observation was not recorded")
     assert_true(first["persisted"] is True, "first provider observation should persist")
 
+    # A same-source event without a hash must not hide the older hashed state.
+    EvidenceLog(data_dir).append(
+        EvidenceEvent(
+            session_id=session_id,
+            category="codex",
+            event_type="synthetic_unhashed_marker",
+            source="codex_wham_usage",
+            source_identifier="synthetic",
+            evidence_class="derived",
+            parser_version="synthetic",
+            data={"normalized": {"note": "no source hash on purpose"}},
+        )
+    )
+
     second = wham_usage.record_once(data_dir=data_dir, auth_path=auth_path, opener=fake_open)
     assert_true(second["status"] == "observed", "second provider observation failed")
     assert_true(second["persisted"] is False, "identical provider state duplicated evidence")
 
     evidence = EvidenceLog(data_dir)
     events = evidence.read_session(session_id)
-    wham_events = [event for event in events if event.get("source") == "codex_wham_usage"]
+    wham_events = [
+        event
+        for event in events
+        if event.get("source") == "codex_wham_usage"
+        and event.get("event_type") == "quota_provider_observation"
+    ]
     comparisons = [event for event in events if event.get("event_type") == "quota_source_comparison"]
     assert_true(len(wham_events) == 1, "expected one deduplicated WHAM observation")
     assert_true(len(comparisons) == 1, "expected one source comparison")
@@ -207,6 +227,8 @@ def main() -> None:
             "source_correlation": True,
             "secret_redaction": True,
             "unavailable_state": True,
+            "case_insensitive_headers": True,
+            "unhashed_event_skip": True,
         }
     )
 

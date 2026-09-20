@@ -72,9 +72,9 @@ code-weaver-wham-usage.service
 code-weaver-wham-usage.timer
 ```
 
-The timer observes provider usage every 30 seconds. An unavailable authentication/network/provider/schema state is recorded as `UNAVAILABLE` evidence and does not stop future observations.
+The timer observes provider usage every 30 seconds. An unavailable authentication/network/provider/schema state is recorded as `unavailable` evidence and does not stop future observations.
 
-When a recent `Codex Stats.log` quota observation is also present, Code Weaver creates a `DERIVED` `quota_source_comparison` event. Matching values are recorded as a match; disagreements are preserved as a mismatch. Stats observations older than ten minutes are not forced into a comparison.
+When a recent `Codex Stats.log` quota observation is also present, Code Weaver creates a `derived` `quota_source_comparison` event. Matching values are recorded as a match; disagreements are preserved as a mismatch. Stats observations older than ten minutes are not forced into a comparison.
 
 The request behavior was independently implemented after reviewing the public MIT-licensed `Maol-1997/codex-stats` project. Code Weaver does not require or vendor that extension at runtime.
 

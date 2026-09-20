@@ -36,6 +36,8 @@ from evidence import EvidenceEvent, EvidenceLog, now_iso
 PARSER_VERSION = "wham-usage-0.3"
 ENDPOINT = "https://chatgpt.com/backend-api/wham/usage"
 DEFAULT_TIMEOUT_SECONDS = 12.0
+MAX_REVERSE_SCAN_BYTES = 4 * 1024 * 1024
+REVERSE_SCAN_CHUNK_BYTES = 64 * 1024
 RUNTIME_SOURCES = (
     "code_weaver_runtime",
     "electron-widget-startup",
@@ -241,14 +243,52 @@ def active_runtime_session_id(data_dir: Path) -> Optional[str]:
     return str(row[0]) if row else None
 
 
+def _recent_session_events(evidence: EvidenceLog, session_id: str):
+    """Yield recent session JSONL records newest-first using bounded I/O."""
+    path = evidence.events_dir / f"{session_id}.jsonl"
+    if not path.exists():
+        return
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            end = handle.tell()
+            floor = max(0, end - MAX_REVERSE_SCAN_BYTES)
+            position = end
+            carry = b""
+            while position > floor:
+                size = min(REVERSE_SCAN_CHUNK_BYTES, position - floor)
+                position -= size
+                handle.seek(position)
+                chunk = handle.read(size)
+                pieces = (chunk + carry).split(b"\n")
+                carry = pieces[0]
+                for raw in reversed(pieces[1:]):
+                    if not raw.strip():
+                        continue
+                    try:
+                        event = json.loads(raw.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        continue
+                    if isinstance(event, dict):
+                        yield event
+            if floor == 0 and carry.strip():
+                try:
+                    event = json.loads(carry.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    event = None
+                if isinstance(event, dict):
+                    yield event
+    except OSError:
+        return
+
+
 def _latest_source_hash(evidence: EvidenceLog, session_id: str, source: str) -> Optional[str]:
-    for event in reversed(evidence.read_session(session_id)):
+    for event in _recent_session_events(evidence, session_id):
         if event.get("source") != source:
             continue
         normalized = event.get("data", {}).get("normalized")
         if isinstance(normalized, dict) and normalized.get("source_record_hash"):
             return str(normalized["source_record_hash"])
-        return None
     return None
 
 
@@ -260,7 +300,7 @@ def _append_if_changed(evidence: EvidenceLog, event: EvidenceEvent, record_hash:
 
 
 def _latest_stats_quota(evidence: EvidenceLog, session_id: str) -> Optional[dict]:
-    for event in reversed(evidence.read_session(session_id)):
+    for event in _recent_session_events(evidence, session_id):
         if event.get("event_type") != "quota_update" or event.get("source") != "codex_stats_log":
             continue
         normalized = event.get("data", {}).get("normalized")
